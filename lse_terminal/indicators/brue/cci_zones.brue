@@ -1,0 +1,6 @@
+# title: CCI Zones
+# panel: below
+c = cci(hlc3, 20)
+plot(c, title="cci")
+hline(100)
+hline(-100)

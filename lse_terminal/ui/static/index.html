@@ -1,0 +1,1214 @@
+<!doctype html>
+<!-- The "dark" class is how the chart engine (and its Tailwind tokens) select
+     the dark palette, matching the terminal's near-black chrome. -->
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>
+// Theme boot: replay the saved choice BEFORE the stylesheets paint, so a
+// light-mode relaunch never flashes dark. app.js owns the toggle button;
+// the html tag ships class="dark", light mode is that class removed (the
+// chart bundle's Tailwind dark: tokens key off the same class).
+try {
+  if (localStorage.getItem("lset-theme") === "light")
+    document.documentElement.classList.remove("dark");
+} catch (e) { /* storage disabled: stay dark */ }
+// Mirror the class onto data-theme. The chart bundle's Tailwind config
+// compiles every dark: variant against [data-theme="dark"] (not .dark), so
+// without this attribute the React islands' dark styles never fire and
+// their panels render light on a dark app (seen on QUANT MODELS cards).
+document.documentElement.setAttribute("data-theme",
+  document.documentElement.classList.contains("dark") ? "dark" : "light");
+</script>
+<title>LSE Terminal</title>
+<link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./chart/chart.css">
+<script src="./vendor/lightweight-charts.4.2.0.js"></script>
+<link rel="stylesheet" href="./vendor/xterm.css">
+<script src="./vendor/xterm.js"></script>
+<script src="./vendor/addon-fit.js"></script>
+<script src="./chart/chart.js"></script>
+</head>
+<body>
+<header>
+  <div id="topline">
+    <!-- The brand wordmark is gone: the native title bar already says
+         "LSE Terminal", so the topline's left slot carries the active data
+         connection (the API-key manager) instead, and the
+         section rail sits to its right. -->
+    <div id="connline">
+      <!-- No status LED here: the coloured dot read as consumer chrome, not
+           a terminal. The sub line already states the connection in words,
+           so the dot was saying the same thing twice in the one colour the
+           rest of the header never uses. -->
+      <button id="conn-bar" title="Manage API keys and data sources">
+        <span id="conn-main">
+          <span id="conn-title">London Strategic Edge</span>
+          <span id="conn-sub">No data key</span>
+        </span>
+        <span id="conn-caret">&#9662;</span>
+      </button>
+      <div id="conn-menu" class="hidden"></div>
+    </div>
+    <nav id="rail">
+      <button id="rail-markets" class="rail-btn active">MARKETS</button>
+      <button id="rail-backtest" class="rail-btn">BACKTEST</button>
+      <button id="rail-econ" class="rail-btn">ECONOMIC</button>
+      <button id="rail-workspace" class="rail-btn">WORKSPACE</button>
+      <button id="rail-research" class="rail-btn">RESEARCH</button>
+    </nav>
+    <div id="status"></div>
+    <!-- TERMINAL WALKTHROUGH (born GUIDE in the left rail, then HELP,
+         then this name and this spot): the
+         built-in user guide, placed in the top-right cluster just left of
+         MY DATA. Same .rail-btn class and the id kept as rail-guide, so the
+         rail handlers, the sweeps and the hosted-mode rules keep working;
+         the document is guide.md next to this file and the same text is
+         what every AI the terminal talks to reads (see the #guide section
+         comment). Never hidden, hosted included: it is a static page. -->
+    <button id="rail-guide" class="rail-btn">TERMINAL WALKTHROUGH</button>
+    <!-- MY DATA lives top-right next to the theme toggle, not in the left
+         rail. Same id + .rail-btn class, so the rail handlers and the
+         hosted-mode hide in app.js keep working unchanged. -->
+    <button id="rail-data" class="rail-btn">MY DATA</button>
+    <!-- UPDATE sits between MY DATA and the theme toggle.
+         Ships hidden and STAYS hidden unless a genuinely newer
+         release exists: an always-on button that mostly says "up to date"
+         is chrome reporting nothing. app.js owns its states (newer release /
+         downloading / restart to install) and picks the install path, the
+         desktop updater or the release download. -->
+    <button id="update-btn" class="hidden"></button>
+    <!-- GitHub: source-repo link for the terminal,
+         between UPDATE and the theme toggle. An <a>, not a .rail-btn, so
+         the rail handlers and the hosted-mode sweeps in app.js never see
+         it. -->
+    <a id="github-btn" href="https://github.com/londonstrategicedge/lse-terminal" target="_blank" rel="noopener" title="LSE Terminal on GitHub" aria-label="LSE Terminal on GitHub"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg><span>GITHUB</span></a>
+    <button id="theme-toggle" title="Switch between light and dark">&#9728;&#65039;</button>
+  </div>
+  <!-- Pro-terminal secondary bar: the active section's sub-views,
+       centered under the rail. app.js renderSubrail() fills it per section
+       (MARKETS / BACKTEST / ECONOMIC / WORKSPACE each have a set; entries
+       without a handler render as quiet Coming-soon placeholders). MY DATA
+       keeps it hidden entirely rather than showing an empty strip. -->
+  <nav id="subrail" class="hidden"></nav>
+  <div id="controls">
+  <!-- No data-source dropdown: the active rail tab decides the source.
+       MARKETS is live LSE data (API key), BACKTEST / MY DATA are the
+       user's own imported files. -->
+  <input id="symbol" list="symbol-options" placeholder="Search symbol&hellip;" autocomplete="off">
+  <datalist id="symbol-options"></datalist>
+  <nav id="timeframes"></nav>
+  <select id="chart-type" title="Chart type">
+    <option value="candles">Candles</option>
+    <option value="bars">Bars</option>
+    <option value="line">Line</option>
+    <option value="area">Area</option>
+  </select>
+  <button id="ind-open" title="Add and customise indicators">&#402; Indicators</button>
+  <!-- Text-only toolbar actions: the old &#10022;/&#8683;/&#9638; glyph
+       prefixes read as decoration, not chrome.
+       The &#402; on Indicators stays: it is the recognised
+       function-glyph convention on charting toolbars. -->
+  <!-- No My Data button here: the MY DATA rail tab above is the single door to
+       imports; a second toolbar copy of the same tab was
+       duplicate chrome. -->
+  <!-- No Assistant / AI header buttons: the AI lives in the permanent right
+       rail, a fixture like the left sidebar, so it
+       needs no toggle in the toolbar. -->
+  <button id="bt-open" title="Backtest a strategy" class="hidden">&#9654;</button>
+  <!-- Chart layout sits last and is pushed flush right by CSS (margin-left:auto):
+       it configures the chart's appearance rather than selecting what is drawn,
+       so it is separated from the symbol/timeframe/indicator group on the left. -->
+  <!-- Screen layout: the site's Layout picker (grid presets + sync toggles),
+       mounted here by the chart bundle (LSEChart.mountLayoutButton). -->
+  <!-- Level 3 data: shown only when the configured key's plan carries MBO
+       access AND the charted instrument maps to a recorded futures contract
+       (/api/mbo/status). For everyone else the button never exists, so the
+       toolbar advertises nothing the plan cannot serve. -->
+  <button id="l3-open" class="hidden" title="Order-by-order flow for this instrument">Level 3 data</button>
+  <!-- Right group order: layout grid, then Templates,
+       then Chart layout. Templates is the toolbar door to the same store as
+       the chart's right-click "Chart template" submenu (the menu stays
+       AND gets a visible button). No separate Appearance
+       button: colours live inside the Chart layout panel (a short-lived
+       split into its own button was reverted). -->
+  <span id="sl-slot"></span>
+  <button id="tpl-open" title="Save this chart setup, or apply a saved one">Templates</button>
+  <button id="cs-open" title="Colours, candles, background, axis">Chart layout</button>
+  </div>
+</header>
+<!-- Indicator browser: replaces the old add-dropdown. A searchable list of
+     every registered indicator (built-ins + the user's own); click toggles it
+     on the chart, the gear on an active row opens its parameters. Positioned
+     under its button by app.js. -->
+<div id="ind-panel" class="hidden">
+  <input id="ind-search" placeholder="Search indicators&hellip;" spellcheck="false" autocomplete="off">
+  <div id="ind-list"></div>
+  <button id="ind-create">+ Create custom indicator (Python)</button>
+</div>
+<!-- Per-indicator parameter editor, opened from a chip or an active row. -->
+<div id="ind-cfg" class="hidden"></div>
+<!-- Chart templates dropdown (toolbar Templates button): rows apply, x
+     deletes (two-click), the bottom row saves the current setup under a
+     name. Same workspace store as the right-click menu. -->
+<div id="tpl-panel" class="hidden"></div>
+<!-- Custom indicator editor. Fills the screen LEFT of the assistant rail
+     (app.js tracks the rail's live width), so the AI stays on the right to
+     guide the code. Opens pre-filled with the template, never blank; the
+     sidebar carries the user's files plus one-click starter examples, and
+     the right column is the API quick reference. -->
+<div id="editor" class="hidden">
+  <!-- Header row spans the whole editor so Close is always at the top-right
+       corner, never squeezed inside the code column's button bar.
+       The reference column is opt-in via
+       Docs; the code column keeps the width by default. -->
+  <div id="ed-head">
+    <span id="ed-head-title">Indicators</span>
+    <button id="ed-docs" title="Show or hide the API reference">Docs</button>
+    <button id="ed-close" title="Close the editor (Esc)">&#215;</button>
+  </div>
+  <div id="ed-body">
+  <div id="ed-side">
+    <button id="ed-new">+ New indicator (Python)</button>
+    <button id="ed-new-brue">+ New indicator (Brue)</button>
+    <div class="ed-side-label">Your indicators</div>
+    <div id="ed-list"></div>
+    <div class="ed-side-label">Examples</div>
+    <div id="ed-examples"></div>
+  </div>
+  <div id="ed-main">
+    <div id="ed-bar">
+      <input id="ed-name" placeholder="my_indicator.py" spellcheck="false">
+      <button id="ed-save">Save</button>
+      <button id="ed-ask" title="Send this code to the assistant on the right">Ask AI</button>
+      <button id="ed-delete">Delete</button>
+    </div>
+    <!-- Same two-layer highlighted editor as the workspace IDE / strategy
+         editor: coloured tokens in #ed-hl underneath, transparent-text
+         textarea on top, line numbers in a fixed gutter strip. -->
+    <div id="ed-edwrap">
+      <pre id="ed-gutter" aria-hidden="true"></pre>
+      <pre id="ed-hl" aria-hidden="true"><code id="ed-hl-code"></code></pre>
+      <textarea id="ed-src" spellcheck="false" wrap="off"></textarea>
+    </div>
+    <pre id="ed-err" class="hidden"></pre>
+    <!-- Live preview: the draft runs on the charted
+         symbol's candles as you type, so you see the drawing before saving.
+         Overlay output draws over the candles; pane output gets the strip
+         below, the same split the real chart will use. -->
+    <div id="ed-preview">
+      <div id="ed-pv-head">Preview<span id="ed-pv-sym"></span><span id="ed-pv-msg"></span></div>
+      <div id="ed-pv-price"></div>
+      <div id="ed-pv-pane" class="hidden"></div>
+    </div>
+  </div>
+  <!-- Reference column. Redesigned after the first cut read as crammed:
+       a numbered how-it-works, then the highlighted
+       template (app.js colours .ed-help-code with pyTokenHTML at boot),
+       then term/definition rows. Short factual lines, generous spacing.
+       Opt-in via the header Docs toggle (hidden by default;
+       it was eating 360px the code column needs). -->
+  <div id="ed-help" class="hidden">
+    <div class="ed-help-title">How it works</div>
+    <ol class="ed-steps">
+      <li><span>1</span><div>You write one function. It receives
+        <code>df</code>, the chart's candles, as a pandas DataFrame:
+        <code>ts, open, high, low, close, volume</code>.</div></li>
+      <li><span>2</span><div>Return a <code>Series</code> and it draws as one
+        line. Return a <code>DataFrame</code> and each named column draws as
+        its own line.</div></li>
+      <li><span>3</span><div>Save. It appears in the Indicators list
+        immediately; errors show under the editor.</div></li>
+    </ol>
+    <pre class="ed-help-code">from lse_terminal import indicator
+
+@indicator("my_ind",
+    title="My Ind",
+    overlay=True,
+    params={"length": {
+        "type": "int", "default": 20,
+        "min": 1, "max": 500}})
+def my_ind(df, length=20):
+    return df["close"].rolling(length).mean()</pre>
+    <div class="ed-help-title">Settings on @indicator</div>
+    <div class="ed-kv">
+      <code>overlay</code>
+      <div>True draws over the candles, False in its own pane below.</div>
+      <code>params</code>
+      <div>Each entry becomes a field in the indicator's settings form.
+        <code>type</code> is int, float, bool or str; min and max are
+        enforced.</div>
+      <code>styles</code>
+      <div>Per-column looks, e.g. <code>{"hist": {"kind":
+        "histogram"}}</code>. Default is a line.</div>
+    </div>
+    <div class="ed-help-title">Good to know</div>
+    <div class="ed-kv">
+      <code>Ask AI</code>
+      <div>Sends your code to the assistant on the right; it knows this API
+        and can write or fix the maths with you.</div>
+      <code>Share</code>
+      <div>An indicator is one file; send it to someone and they drop it in
+        their editor.</div>
+      <code>.brue</code>
+      <div>Prefer a script? Every <code>plot()</code> is a line,
+        <code># title:</code> names it, <code># panel: price|below</code>
+        places it.</div>
+    </div>
+  </div>
+  </div>
+</div>
+<main>
+  <aside id="side">
+    <!-- No LAYOUTS zone here: saved chart setups live only in the chart's
+         right-click "Chart template" menu (a second
+         layouts surface next to the library read as a duplicate). -->
+    <!-- Fold tab: a TradingView-style chevron riding the sidebar's right
+         edge, vertically centered on the seam it folds (the old
+         toolbar « button was not discoverable; the control now lives on
+         the divider itself). -->
+    <button id="side-fold" title="Collapse the watchlist">&#8249;</button>
+    <!-- Reopen strip: covers the folded sidebar edge-to-edge, same pattern
+         as the assistant rail's #air-expand. -->
+    <button id="side-expand" title="Open the watchlist">
+      <span class="air-exp-chev">&#187;</span>
+      <span class="air-exp-label">Watchlist</span>
+    </button>
+    <div id="watchlist"></div>
+  </aside>
+  <section id="charts">
+    <div id="ind-active"></div>
+    <div id="chart-wrap">
+      <div id="legend"></div>
+      <!-- The chart: the ported LSE engine. #chart is retained only as the
+           host for the lightweight-charts instance that backs the backtest
+           equity curve; it draws no price data. -->
+      <div id="chart-pro"></div>
+      <div id="chart" class="hidden"></div>
+    </div>
+    <div id="panes"></div>
+    <!-- Account dock: MT-style strip under the chart.
+         Summary row (balance, equity, P&L, margin) + Positions/History tabs,
+         fed by the same /api/sim/* polling as the right-rail ticket. Shown
+         only on MARKETS > PRICE & CHARTS with a live key, same rule as the
+         ticket (no trading UI on options/news/screener). -->
+    <div id="acct-dock" class="hidden">
+      <div id="acd-resize" title="Drag to resize"></div>
+      <div id="acd-summary">
+        <span class="acd-cell"><span class="acd-k">Balance</span><span class="acd-v" id="acd-balance">–</span></span>
+        <span class="acd-cell"><span class="acd-k">Equity</span><span class="acd-v" id="acd-equity">–</span></span>
+        <span class="acd-cell"><span class="acd-k">Open P&amp;L</span><span class="acd-v" id="acd-upnl">–</span></span>
+        <span class="acd-cell"><span class="acd-k">Used margin</span><span class="acd-v" id="acd-used">–</span></span>
+        <span class="acd-cell"><span class="acd-k">Free margin</span><span class="acd-v" id="acd-free">–</span></span>
+        <span class="acd-cell"><span class="acd-k">Leverage</span><span class="acd-v" id="acd-lev">–</span></span>
+        <nav id="acd-tabs">
+          <button id="acd-tab-pos" class="active">Positions</button>
+          <button id="acd-tab-ord">Orders</button>
+          <button id="acd-tab-hist">History</button>
+          <!-- Minimiser: folds the dock to just this summary strip; the
+               balance/equity numbers stay visible, the table goes. -->
+          <button id="acd-min" title="Minimise to the summary strip">&#9662;</button>
+        </nav>
+      </div>
+      <div id="acd-body"></div>
+    </div>
+    <div id="backtest" class="hidden">
+      <div id="bt-editor">
+        <div id="bt-bar">
+          <span class="bt-title">Backtest &middot; <span id="bt-engine-label">Python</span></span>
+          <select id="bt-mode" title="Run mode">
+            <option value="run">Backtest</option>
+            <option value="montecarlo">Monte Carlo</option>
+            <option value="walkforward">Walk-forward</option>
+          </select>
+          <button id="bt-run">&#9654; Run</button>
+          <button id="bt-algo" title="Run this strategy live on the paper broker (Brue Connect)">&#9889; Live paper</button>
+          <button id="bt-close">Close</button>
+        </div>
+        <div id="algo-strip" class="hidden"></div>
+        <div id="bt-options">
+          <label>From <input id="bt-from" type="date" title="Trade window start (UTC)"></label>
+          <label>To <input id="bt-to" type="date" title="Trade window end (UTC)"></label>
+          <label class="bt-check"><input id="bt-ext" type="checkbox"> Risk stats</label>
+          <span id="bt-mc-opts" class="hidden">
+            <label>Runs <input id="bt-mc-runs" type="number" value="1000" min="1" max="100000"></label>
+            <label>Seed <input id="bt-mc-seed" type="number" value="42"></label>
+          </span>
+          <span id="bt-datasets" title="Attach alternative datasets as `use` bindings"></span>
+          <span id="bt-wf-opts" class="hidden">
+            <label>Params <input id="bt-wf-params" placeholder="len=5:30:5, mult=1,2,3"
+              title="{{name}} placeholders in the script; grid as lo:hi:step or v1,v2"></label>
+            <label>Folds <input id="bt-wf-folds" type="number" value="4" min="1" max="20"></label>
+            <label>Train <input id="bt-wf-train" type="number" value="0.7" min="0.1" max="0.9" step="0.05"></label>
+          </span>
+        </div>
+        <textarea id="bt-src" spellcheck="false"></textarea>
+        <pre id="bt-err" class="hidden"></pre>
+      </div>
+      <div id="bt-results">
+        <div id="bt-stats"></div>
+        <div id="bt-quant" class="hidden"></div>
+        <div id="bt-equity-label">Equity curve</div>
+        <div id="bt-equity"></div>
+      </div>
+    </div>
+  </section>
+  <!-- The BACKTEST mode chooser page ("Choose how you want to test") was
+       retired: the tab now lands straight in the
+       last-used mode (Algo Development on first launch) and the subrail
+       switches modes, with the old card descriptions as its tooltips. -->
+  <!-- MARKETS without a key lands here: live data needs the free LSE API
+       key, so the tab itself is the connect form until one is saved. -->
+  <section id="lse-connect" class="hidden">
+    <div class="bt-choice-inner">
+      <div class="bt-choice-title">Connect your LSE API key</div>
+      <div class="bt-choice-sub">Markets streams live data from London
+      Strategic Edge, so it needs your free API key. Get one at
+      <!-- #api lands on the Databank's API section, whose credential panel
+           mints the key ("Sign in to get your key" -> "Generate key"). The
+           bare /data URL drops a new user at the top of a long catalogue
+           page, and on mobile the overview copy of that panel is
+           hidden md:block, so the one thing they came for is not on screen. -->
+      <a href="https://londonstrategicedge.com/data#api" target="_blank"
+      rel="noopener">londonstrategicedge.com/data</a>, then paste it below.
+      The key is saved in this machine's local config file and never leaves
+      it. Your own imported files live under BACKTEST and MY DATA.</div>
+      <div id="lse-keyline" class="ai-keyline">
+        <input id="lse-key" type="password" placeholder="lse_live_..."
+               spellcheck="false" autocomplete="off">
+        <button id="lse-connect-btn">Connect</button>
+      </div>
+      <pre id="lse-key-err" class="hidden"></pre>
+    </div>
+  </section>
+  <!-- Host for the ported manual backtester (mounted on demand). -->
+  <section id="manual-backtest" class="hidden"></section>
+  <!-- Connection screen: the full-surface version of the little conn-menu
+       dropdown. Opened from #conn-bar. Same information architecture (the LSE
+       data connection first, then brokers) with room for logos, taglines and
+       per-broker credential forms. Body is rendered by app.js from the live
+       directory (/api/directory) merged with hub connection state
+       (/api/broker/list); the connect/disconnect plumbing is the same as the
+       dropdown, so nothing here re-implements the broker hub. -->
+  <div id="conn-screen" class="hidden">
+    <div id="cs-card">
+      <div id="cs-head"><span>Connections</span>
+        <button id="cs-close" title="Close">&times;</button></div>
+      <div id="cs-body"></div>
+    </div>
+  </div>
+  <!-- Listing inquiry form: the commercial door, opened from the BROKERS
+       "More brokers" row only (it is a broker ask, not a
+       data-connection one). POSTs to the remote inquiry endpoint directly, so
+       it works identically on desktop and hosted and does not depend on the
+       local engine's age. No pricing appears anywhere. -->
+  <div id="inq-modal" class="hidden">
+    <div id="inq-card">
+      <div id="inq-head"><span>Broker inquiry</span>
+        <button id="inq-close" title="Close">&times;</button></div>
+      <div id="inq-form">
+        <p class="inq-lead">For brokers and trading venues that want to be
+          available inside the terminal. We reply to your firm's email address.</p>
+        <!-- Every caption sits in .inq-lab: the label itself is a flex
+             COLUMN, so a bare "*" span became its own stacked row and every
+             required field rendered taller than its neighbour.
+             Caption and star share
+             one line inside the span, inputs align across the row.
+             The Regulator field was dropped; Asset classes goes
+             full-width so the two-column grid never has an odd hole. -->
+        <div class="inq-grid">
+          <label><span class="inq-lab">Firm <span class="inq-req">*</span></span>
+            <input id="inq-firm" placeholder="Legal or trading name" spellcheck="false" autocomplete="organization"></label>
+          <label><span class="inq-lab">Website</span>
+            <input id="inq-site" placeholder="https://" spellcheck="false" autocomplete="url"></label>
+          <label><span class="inq-lab">Contact name</span>
+            <input id="inq-name" spellcheck="false" autocomplete="name"></label>
+          <label><span class="inq-lab">Work email <span class="inq-req">*</span></span>
+            <input id="inq-email" type="email" placeholder="name@yourfirm.com" spellcheck="false" autocomplete="email"></label>
+          <label class="inq-wide"><span class="inq-lab">Asset classes</span>
+            <input id="inq-assets" placeholder="FX, indices, equities" spellcheck="false"></label>
+          <label class="inq-wide"><span class="inq-lab">Message <span class="inq-req">*</span></span>
+            <textarea id="inq-msg" rows="4" spellcheck="false" placeholder="Who you are, what you offer, and what you have in mind."></textarea></label>
+          <!-- Honeypot: invisible to people, irresistible to bots. -->
+          <input id="inq-web" tabindex="-1" autocomplete="off" aria-hidden="true">
+        </div>
+        <pre id="inq-err" class="hidden"></pre>
+        <div id="inq-actions">
+          <span class="inq-note">Personal webmail addresses are not accepted.</span>
+          <button id="inq-send">Send inquiry</button>
+        </div>
+      </div>
+      <div id="inq-done" class="hidden">
+        <div class="inq-done-title">Received.</div>
+        <div>We will reply to your firm's email address.</div>
+      </div>
+    </div>
+  </div>
+  <!-- LSE databank import (library toolbar > LSE): browse the databank catalog,
+       pick an instrument or dataset, and pull its history straight into the
+       library. The engine downloads server-built Parquet via your LSE key. -->
+  <div id="lsb-modal" class="hidden">
+    <div id="lsb-card">
+      <div id="lsb-head"><span>Import from LSE</span>
+        <button id="lsb-close" title="Close">&times;</button></div>
+      <p class="src-help">Your LSE key unlocks the databank: the full recorded
+      history behind the platform. Pick anything below and it downloads into
+      your library as compressed Parquet, ready to chart and backtest.</p>
+      <div id="lsb-key-hint" class="hidden">No LSE API key set. Add your free
+        key under <b>MARKETS</b> first; the databank uses the same key.</div>
+      <div id="lsb-body" class="hidden">
+        <div id="lsb-sets"></div>
+        <div id="lsb-mid">
+          <input id="lsb-search" placeholder="Search symbol or name" spellcheck="false">
+          <div id="lsb-list"></div>
+        </div>
+        <div id="lsb-side">
+          <div id="lsb-info" class="md-help">Pick a dataset on the left, then an instrument.</div>
+          <!-- Presets over pickers: timeframe and range
+               are one-click chip rows; the date inputs stay as the custom
+               escape hatch and are auto-filled by the Range chips. -->
+          <div class="lsb-field" id="lsb-tf-wrap">Timeframe<div id="lsb-tf" class="lsb-chips"></div></div>
+          <div class="lsb-field">Range<div id="lsb-range" class="lsb-chips"></div></div>
+          <label>From <input id="lsb-start" type="date"></label>
+          <label>To <input id="lsb-end" type="date"></label>
+          <label>Library folder <input id="lsb-folder" list="lsb-folders" placeholder="LSE" spellcheck="false">
+            <datalist id="lsb-folders"></datalist></label>
+          <button id="lsb-go" disabled>Download to library</button>
+          <div id="lsb-status" class="hidden"></div>
+          <div id="lsb-quota" class="md-help"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- Algo Development IDE (BACKTEST > Algo Development): a real folder
+       of .py files (the AI agents edit the same directory), an editor, and
+       one-click backtests through the python engine. -->
+  <section id="pyide" class="hidden">
+    <!-- No explorer panel of its own: the shared library
+         sidebar (left of this section) is the IDE's explorer; scripts open
+         in this editor, data-file clicks pick the backtest dataset. -->
+    <div id="py-main">
+      <!-- VS Code tab bar: every opened file rides
+           the bar with a close x, scripts and data previews alike; the run
+           controls sit on the bar's right like editor actions. -->
+      <div id="py-bar">
+        <div id="py-tabs"></div>
+        <span class="ml-code-spacer"></span>
+        <!-- No dataset dropdown or bars input (toolbar
+             clutter). The dataset is picked by clicking a data file in the
+             library; this label just names the current pick. Bars are always
+             the engine maximum. -->
+        <span id="py-dataset-label" title="Backtest dataset. Click a data file in the library to change it."></span>
+        <!-- One RUN, VS Code style: a Strategy file
+             backtests on the picked dataset AT THE FILE'S OWN TIMEFRAME
+             (the timeframe dropdown was removed:
+             you run the file you have), anything else executes as plain
+             Python. No separate BACKTEST / RUN FILE pair. -->
+        <!-- Label only: the play triangle is drawn in CSS (::before) so the
+             JS label swaps (RUN / RUNNING) can never wipe the glyph, and
+             the running state can spin it. -->
+        <button id="py-run">RUN</button>
+        <button id="py-stop" class="hidden">&#9632; STOP</button>
+      </div>
+      <!-- Dataset preview: clicking a data file in
+           the library swaps the editor for its columns and a 100-row
+           sample, VS Code style (click a file, see the file); the click
+           also picks it as the RUN dataset. Clicking any script (or the
+           close button) brings the editor back. -->
+      <div id="py-preview" class="hidden">
+        <div id="py-preview-head">
+          <span id="py-preview-title"></span>
+          <span class="ml-code-spacer"></span>
+          <button id="py-preview-close" title="Back to the editor">&#10005;</button>
+        </div>
+        <div id="py-preview-table"></div>
+        <!-- Reveals more of the already-fetched window (the rows endpoint
+             ships up to 5000 at once), so no engine change is needed. -->
+        <button id="py-preview-more" class="hidden"></button>
+      </div>
+      <!-- Same two-layer highlighted editor as the workspace IDE and the
+           ML blueprint: coloured tokens underneath, transparent-text
+           textarea on top. Visibility toggles on this wrapper, never the
+           textarea alone, or the backdrop would linger over previews. -->
+      <div id="py-edwrap">
+        <pre id="py-gutter" aria-hidden="true"></pre>
+        <pre id="py-hl" aria-hidden="true"><code id="py-hl-code"></code></pre>
+        <textarea id="py-code" spellcheck="false" wrap="off"></textarea>
+      </div>
+      <!-- No helper caption under the editor (it read
+           as clutter); the pybt fill semantics live in the module docstring
+           and the assistant explains them on demand. -->
+    </div>
+    <!-- The results surface IS a terminal panel with VS Code semantics.
+         Multiple instances in one panel: real PTY shells / Python REPLs
+         the user types into (/api/term/pty, same wire as the WORKSPACE
+         terminal, served by every installed engine), plus an output-only
+         "backtest" console that RUN prints its report into, the way VS
+         Code tasks get their own terminal. Tabs switch instances, + opens
+         a shell, the chevron picks the kind, the trash kills the active
+         instance. -->
+    <!-- Panes a strategy's `plots` dict declared, drawn after each RUN;
+         hidden while empty (older engines return no plots at all). -->
+    <div id="py-plots" class="plot-strip hidden"></div>
+    <div id="py-panel">
+      <div id="py-sash" title="Drag to resize"></div>
+      <div id="py-panel-bar">
+        <span id="py-panel-title">TERMINAL</span>
+        <span class="ml-code-spacer"></span>
+        <span id="py-term-tabs"></span>
+        <button id="py-term-new" title="New terminal (shell)">+</button>
+        <button id="py-term-kind" title="Choose what a new terminal runs">&#9662;</button>
+        <button id="py-term-kill" title="Kill the active terminal">&#128465;&#65038;</button>
+        <div id="py-term-menu" class="hidden">
+          <button data-kind="shell">Shell</button>
+          <button data-kind="python">Python REPL</button>
+        </div>
+      </div>
+      <div id="py-term"></div>
+    </div>
+  </section>
+  <!-- Host for the economic calendar (React page, mounted on demand). -->
+  <section id="econcal" class="hidden"><div id="econcal-root"></div></section>
+  <!-- WORKSPACE > Data Visualisation (React page, mounted on demand). -->
+  <section id="dataviz" class="hidden"><div id="dataviz-root"></div></section>
+  <!-- WORKSPACE > NOTEBOOKS: infinite-canvas research documents. The whole
+       surface (library rail, canvas, maths palette) is the LSENotebooks
+       island; documents live in ~/.config/lse-terminal/notebooks/. -->
+  <section id="nbpage" class="hidden"><div id="nb-root"></div></section>
+  <!-- MARKETS > Options: option chain + flow tape from the /api/options/*
+       engine routes. Needs the LSE key; a 409 from the engine renders as a
+       connect hint inside #opt-body, so the page itself always opens. -->
+  <section id="optpage" class="hidden">
+    <!-- Symbol rail: every optionable underlying as a clickable list with a
+         filter box, the way the watchlist flanks the charts (symbols
+         are a visible clickable list on the left,
+         not a type-in search). #opt-main owns the board and the scroll. -->
+    <aside id="opt-side">
+      <input id="opt-filter" placeholder="Filter symbols&hellip;"
+             spellcheck="false" autocomplete="off">
+      <div id="opt-list"></div>
+    </aside>
+    <div id="opt-main">
+    <div id="opt-head">
+      <nav id="opt-views">
+        <button id="opt-view-chain" class="active">Chain</button>
+        <button id="opt-view-flow">Flow</button>
+      </nav>
+      <select id="opt-expiry" title="Expiry"></select>
+      <select id="opt-strikes" title="Strikes shown around the money">
+        <option value="auto" selected>Auto strikes</option>
+        <option value="16">16 strikes</option>
+        <option value="30">30 strikes</option>
+        <option value="60">60 strikes</option>
+        <option value="">All strikes</option>
+      </select>
+      <button id="opt-greeks" title="Gamma, theta and vega columns">Greeks</button>
+      <select id="opt-type" class="hidden" title="Contract type">
+        <option value="">Calls + puts</option>
+        <option value="call">Calls only</option>
+        <option value="put">Puts only</option>
+      </select>
+      <select id="opt-minprem" class="hidden" title="Minimum premium per print">
+        <option value="">Any premium</option>
+        <option value="10000">$10k+</option>
+        <option value="50000">$50k+</option>
+        <option value="100000">$100k+</option>
+        <option value="250000">$250k+</option>
+        <option value="1000000">$1M+</option>
+      </select>
+      <button id="opt-refresh">Refresh</button>
+      <span id="opt-note"></span>
+    </div>
+    <!-- Board + analytics side by side; every panel derives from the chain
+         fetch already in memory (no extra endpoints). Hidden in Flow view
+         and under 1500px viewport (media query). -->
+    <div id="opt-content">
+    <div id="opt-body"></div>
+    <aside id="opt-viz" class="hidden">
+      <div class="ov-tiles">
+        <div class="ov-tile"><span>P/C VOL</span><b id="ov-pcv">-</b></div>
+        <div class="ov-tile"><span>P/C PREM</span><b id="ov-pcp">-</b></div>
+        <div class="ov-tile"><span>TOTAL PREM</span><b id="ov-tp">-</b></div>
+        <div class="ov-tile"><span>ATM IV</span><b id="ov-atm">-</b></div>
+      </div>
+      <!-- Tiles stay pinned; the chart panels scroll beneath them. -->
+      <div id="ov-scroll">
+      <div class="ov-panel">
+        <div class="ov-head"><span id="ov-smile-t">IV SMILE</span>
+          <span class="ov-legend"><i class="c"></i>Calls <i class="p"></i>Puts</span></div>
+        <canvas id="ov-smile"></canvas><div class="ov-read" id="ov-smile-r"></div>
+      </div>
+      <div class="ov-panel">
+        <div class="ov-head"><span>ATM IV TERM STRUCTURE</span></div>
+        <canvas id="ov-term"></canvas><div class="ov-read" id="ov-term-r"></div>
+      </div>
+      <div class="ov-panel">
+        <div class="ov-head"><span id="ov-volp-t">VOLUME BY STRIKE</span>
+          <span class="ov-legend"><i class="c"></i>Calls <i class="p"></i>Puts</span></div>
+        <canvas id="ov-volp"></canvas><div class="ov-read" id="ov-volp-r"></div>
+      </div>
+      <div class="ov-panel">
+        <div class="ov-head"><span id="ov-pay-t">PAYOFF</span>
+          <button id="ov-pay-x" class="hidden" title="Clear selection">&times;</button></div>
+        <canvas id="ov-pay"></canvas>
+        <div class="ov-read" id="ov-pay-r">Click a contract in the chain to see its payoff at expiry.</div>
+      </div>
+      </div>
+    </aside>
+    </div>
+    </div>
+  </section>
+  <!-- MARKETS > SCREENER: the whole live universe as one sortable,
+       filterable virtualized table over the cached /api/screener snapshot
+       (no websockets by design; the engine's provider revalidates with
+       ETag). Column sets are presets over the server's column manifest, so
+       new server-side metrics appear without a client change. -->
+  <section id="scrpage" class="hidden">
+    <div id="scr-head">
+      <nav id="scr-classes"></nav>
+      <nav id="scr-views"></nav>
+      <input id="scr-search" placeholder="Filter symbols&hellip;"
+             spellcheck="false" autocomplete="off">
+      <span id="scr-count"></span>
+    </div>
+    <div id="scr-table">
+      <div id="scr-thead"></div>
+      <div id="scr-body"><div id="scr-spacer"></div><div id="scr-rows"></div></div>
+    </div>
+    <!-- Paged, not endless: the snapshot is 4.2k instruments and listing them
+         all as one scroll made the table read as a wall.
+         100 rows a page, next/previous below the table where the scroll ends. -->
+    <div id="scr-pager">
+      <button id="scr-prev">&lsaquo; Previous</button>
+      <span id="scr-range"></span>
+      <button id="scr-next">Next page &rsaquo;</button>
+    </div>
+    <div id="scr-status" class="hidden"></div>
+    <!-- Profile card: opened by a row click; Open chart carries the old
+         row-click behavior so the chart stays one click away. -->
+    <div id="scr-card-back" class="hidden">
+      <div id="scr-card">
+        <button id="scr-card-close" title="Close">&times;</button>
+        <div id="scr-card-head">
+          <span id="scr-card-logo"></span>
+          <div>
+            <div id="scr-card-name"></div>
+            <div id="scr-card-sym"></div>
+          </div>
+        </div>
+        <div id="scr-card-sector"></div>
+        <div id="scr-card-stats"></div>
+        <p id="scr-card-desc" class="hidden"></p>
+        <div id="scr-card-actions">
+          <a id="scr-card-web" class="hidden" target="_blank" rel="noopener"></a>
+          <button id="scr-card-chart">Open chart</button>
+        </div>
+      </div>
+    </div>
+  </section>
+  <!-- MARKETS > NEWS: global headline wall. The globe is the hero (a
+       self-contained canvas world map, no external libs, no CDN: it is an
+       offline product); the feed column on the right is wired to sources
+       later (the globe shipped first, sources come after).
+       Full-page like OPTIONS: the watchlist sidebar is chart context. -->
+  <section id="news" class="hidden">
+    <div id="news-globe-wrap">
+      <canvas id="news-globe"></canvas>
+      <div id="news-globe-cap">GLOBAL MARKETS &middot; LIVE WIRE</div>
+    </div>
+    <aside id="news-feed">
+      <!-- LSE NEWSROOM: original articles from the newsroom feed;
+           clicking one opens the in-page reader below. Sits above the wire
+           headlines because it is our own product; the wire is ambient
+           context. -->
+      <div id="news-articles-head">LSE NEWSROOM</div>
+      <div id="news-articles-body">
+        <div class="news-empty">No articles yet.</div>
+      </div>
+      <div id="news-feed-head">HEADLINES</div>
+      <div id="news-feed-body">
+        <!-- Feed items render here once a source is connected. Terse empty
+             state, no filler copy: state the fact, no prose. -->
+        <div class="news-empty">No news source connected.</div>
+      </div>
+    </aside>
+    <!-- Article reader: replaces the globe + feed row while open (same idiom
+         as the research rs-reader). Body is built by newsOpenReader(). -->
+    <div id="news-reader" class="hidden">
+      <div id="news-reader-head">
+        <button id="news-reader-back">&#8592; NEWS</button>
+        <span id="news-reader-cat"></span>
+        <span id="news-reader-title"></span>
+      </div>
+      <div id="news-reader-scroll"><div id="news-reader-body"></div></div>
+    </div>
+  </section>
+  <!-- RESEARCH: reading surfaces under ONE section
+       id so every existing hide-everything sweep needs exactly one entry.
+       ARTICLES is a vanilla feed of the live papers table (arXiv q-fin +
+       NBER/BIS/Fed/ECB); QUANT MODELS is a React island (LSEQuantModels).
+       Do not add repurposed filler content as a terminal surface. -->
+  <section id="research" class="hidden">
+    <div id="rs-articles">
+      <!-- Filters live in a LEFT sidebar: LATEST on
+           top, then the source and quant-theory groups, same idiom as the
+           QUANT MODELS model picker. Rendered by rsRenderSide(). -->
+      <aside id="rs-side"></aside>
+      <div id="rs-main">
+        <div id="rs-articles-head">
+          <span id="rs-articles-title">LATEST RESEARCH</span>
+          <input id="rs-search" placeholder="Search papers&hellip;">
+          <span id="rs-articles-meta"></span>
+        </div>
+        <div id="rs-articles-body">
+          <div class="news-empty">No research wire yet.</div>
+        </div>
+      </div>
+    </div>
+    <!-- In-terminal paper reader. The engine fetches
+         the publisher's PDF (/api/research/pdf, user-machine egress, local
+         app only) and the iframe shows it same-origin as a blob. Hosted
+         terminals never enter this view; their titles stay external links. -->
+    <div id="rs-reader" class="hidden">
+      <div id="rs-reader-head">
+        <button id="rs-reader-back">&#8592; ARTICLES</button>
+        <span id="rs-reader-src" class="rs-src"></span>
+        <span id="rs-reader-title"></span>
+        <!-- Hands the paper to the assistant (context prefill; the agent
+             pulls full text itself via read_research_paper). -->
+        <button id="rs-reader-ai">Ask AI</button>
+        <a id="rs-reader-ext" target="_blank" rel="noopener noreferrer">Open in browser</a>
+      </div>
+      <div id="rs-reader-body">
+        <div id="rs-reader-status" class="news-empty hidden"></div>
+        <iframe id="rs-reader-frame" title="Paper"></iframe>
+      </div>
+    </div>
+    <div id="rs-models" class="hidden"><div id="rs-models-root"></div></div>
+  </section>
+  <!-- TERMINAL WALKTHROUGH: the built-in user guide (ids keep the
+       original "guide" name, only the label moved). The document
+       is guide.md in this folder, fetched once and rendered by app.js
+       (gdRender): contents on the left, the text on the right, the RESEARCH
+       reading idiom. The SAME file is what the AI reads about the app: the
+       engine hands the hosted assistant its section summaries every turn
+       plus a read_guide tool for the full text, writes it as GUIDE.md into
+       the CLI agents' ai-workspace, and serves read_guide over /mcp; so
+       "do you know how the terminal works?" is answered from this text.
+       Edit guide.md, never a copy. Works hosted too (a static file). -->
+  <section id="guide" class="hidden">
+    <aside id="gd-side"></aside>
+    <div id="gd-main">
+      <div id="gd-doc"><div class="news-empty">Loading the guide&hellip;</div></div>
+    </div>
+  </section>
+  <!-- WORKSPACE: the full IDE tab. VS Code shape:
+       explorer on the left (the strategy folder as a tree, plus the MY DATA
+       library), editor tabs in the middle, and a real terminal docked
+       underneath (python REPL / shell / run-a-file over /api/term/pty, cwd
+       is the same folder the tree shows and the AI agents edit). The AI
+       rail on the right completes the session; it is global chrome, not
+       part of this section. Same files as BACKTEST > Algo Development:
+       that page is the quick single-file flow, this one the full session. -->
+  <section id="wsx" class="hidden">
+    <div id="wsx-side">
+      <!-- The explorer is the shared library tree (same component as the
+           BACKTEST sidebar): workspace files and imported
+           data in one list, rendered by renderLibraryTree with ctx wsx. -->
+      <div id="wsx-lib"></div>
+      <div id="wsx-root" class="md-help" title="Where these files live on disk"></div>
+    </div>
+    <div id="wsx-main">
+      <!-- No backtest controls up here (they read as
+           toolbar clutter). Strategies are backtested from the BACKTEST tab
+           or by the AI assistant; this row is editor tabs + RUN only. -->
+      <div id="wsx-tabs-row">
+        <div id="wsx-tabs"></div>
+        <span class="ml-code-spacer"></span>
+        <button id="wsx-run" title="Run the open file below: a strategy runs as a backtest, anything else as a script">RUN</button>
+      </div>
+      <div id="wsx-edwrap">
+        <!-- Highlight backdrop: the textarea's text is transparent, this pre
+             carries the VS Code style token colours underneath it. The
+             gutter is the VS Code line-number strip, scroll-synced in JS.
+             wrap="off" is a hard guarantee against soft wrap: one wrapped
+             line in the textarea and every line below it stops matching the
+             backdrop (white-space:pre alone is CSS the browser may fight
+             with the wrap attribute's UA default). -->
+        <pre id="wsx-gutter" class="hidden" aria-hidden="true"></pre>
+        <pre id="wsx-hl" class="hidden" aria-hidden="true"><code id="wsx-hl-code"></code></pre>
+        <textarea id="wsx-code" spellcheck="false" wrap="off" class="hidden"></textarea>
+        <div id="wsx-empty">Create a file on the left, or ask the assistant to.<br>
+        <span>Strategies are plain Python: <b>df</b> is already in scope,
+        leave a list called <b>trades</b>. The AI assistant works in this
+        same folder, and the terminal below starts in it.</span></div>
+        <pre id="wsx-err" class="hidden"></pre>
+      </div>
+      <div id="wsx-plots" class="plot-strip hidden"></div>
+      <div id="wsx-panel">
+        <div id="wsx-sash" title="Drag to resize"></div>
+        <div id="wsx-panel-bar">
+          <span id="wsx-panel-title">TERMINAL</span>
+          <span class="ml-code-spacer"></span>
+          <select id="wsx-term-mode" title="What the terminal runs">
+            <option value="shell">Shell</option>
+            <option value="python">Python</option>
+          </select>
+          <button id="wsx-term-restart" title="Restart the terminal">&#8635;</button>
+        </div>
+        <div id="wsx-term"></div>
+      </div>
+    </div>
+  </section>
+  <!-- MACHINE LEARNING: the ML Studio model catalog, trained locally.
+       Training runs as a subprocess of the local engine on the user's own
+       CPU/GPU; the page only provides the workflow (dataset, parameters,
+       live log, results). Catalog and specs come from /api/ml/models. -->
+  <section id="mlpage" class="hidden">
+    <div id="ml-head">
+      <div>
+        <div class="ml-title">MACHINE LEARNING</div>
+        <div class="ml-sub">Train models on this machine with your own CPU or GPU.
+          Data, training and weights never leave this computer.</div>
+      </div>
+      <div id="ml-env"></div>
+      <!-- LIBRARIES panel: makes the library state
+           intuitive: what is installed, what a model still needs, what a
+           click downloads, what happened. Opened from the "Libraries n/N"
+           badge; one row per optional library with its installed version,
+           the download record (size, date), the models it unlocks, and an
+           Install button; rendered by app.js mlRenderLibs(). -->
+      <div id="ml-libs" class="hidden"></div>
+    </div>
+    <div id="ml-body">
+      <div id="ml-catalog"></div>
+      <div id="ml-main">
+        <div id="ml-empty" class="md-empty">Pick a model on the left to set up a training run.</div>
+        <!-- Code-first: a run IS a small Python
+             blueprint. Clicking a model writes its template (all params at
+             defaults, commented) into this editor; the user or the AI
+             assistant edits it, RUN executes it locally. -->
+        <div id="ml-config" class="hidden">
+          <div id="ml-model-head"></div>
+          <div class="ml-block" id="ml-bp-block">
+            <div class="ml-code-bar">
+              <span class="ml-block-title">TRAINING BLUEPRINT</span>
+              <select id="ml-ds-pick" title="Insert a dataset name into the blueprint"></select>
+              <button id="ml-ds-build" title="Compose a named dataset from a MY DATA import">+ Build dataset</button>
+              <span class="ml-code-spacer"></span>
+              <button id="ml-run">&#9654; RUN</button>
+              <button id="ml-stop" class="hidden">&#9632; STOP</button>
+            </div>
+            <!-- Same two-layer highlighted editor as the workspace IDE
+                 (#wsx-*): coloured tokens in the pre underneath, textarea
+                 with transparent text on top so input stays native. -->
+            <div id="ml-edwrap">
+              <pre id="ml-gutter" aria-hidden="true"></pre>
+              <pre id="ml-hl" aria-hidden="true"><code id="ml-hl-code"></code></pre>
+              <textarea id="ml-code" spellcheck="false" wrap="off"></textarea>
+            </div>
+            <div class="md-help">Ask the AI assistant to write or tune this
+            blueprint for you; it knows every model and parameter. Training
+            runs on this computer only.</div>
+          </div>
+          <pre id="ml-err" class="hidden"></pre>
+          <div id="ml-deps-warn" class="hidden">
+            <span id="ml-deps-text"></span>
+            <button id="ml-install">Install</button>
+          </div>
+        </div>
+        <!-- Dataset builder: MY DATA import -> resample + window + baked
+             feature columns -> named dataset usable in any blueprint. -->
+        <div id="ml-ds-modal" class="hidden">
+          <div class="ml-ds-box">
+            <div class="ml-block-title">BUILD DATASET</div>
+            <div class="ml-data-grid">
+              <label>Name <input id="ml-ds-name" placeholder="EURJPY_1H_RSI" autocomplete="off"></label>
+              <label>From import <select id="ml-ds-source"></select></label>
+              <label>Timeframe <select id="ml-ds-tf">
+                <option>1m</option><option>5m</option><option>15m</option><option>30m</option>
+                <option selected>1h</option><option>4h</option><option>1d</option>
+              </select></label>
+              <label>Bars <input id="ml-ds-bars" type="number" value="5000" min="200" max="500000" step="100"></label>
+            </div>
+            <div class="ml-block-title" style="margin-top:10px">BAKED FEATURES <span class="ml-feat-hint">optional indicator columns</span></div>
+            <div id="ml-ds-features"></div>
+            <pre id="ml-ds-err" class="hidden"></pre>
+            <div class="ml-actions">
+              <button id="ml-ds-create">CREATE DATASET</button>
+              <button id="ml-ds-cancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+        <div id="ml-progress" class="hidden">
+          <div class="ml-block-title">TRAINING LOG</div>
+          <pre id="ml-log"></pre>
+        </div>
+        <div id="ml-results" class="hidden"></div>
+        <div class="ml-block" id="ml-history-wrap">
+          <div class="ml-block-title">RECENT RUNS</div>
+          <div id="ml-history" class="md-empty">No training runs yet.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="mydata" class="hidden">
+      <div id="md-form">
+        <div id="md-drop">&#8683; Click to choose a file<br><span>CSV, Parquet, Excel, JSON &middot; or drop one anywhere</span></div>
+        <input id="md-file" type="file" accept=".csv,.tsv,.txt,.parquet,.pq,.feather,.xlsx,.xls,.json" class="hidden">
+        <div id="md-preview" class="hidden"></div>
+        <pre id="md-err" class="hidden"></pre>
+        <p id="md-location" class="md-help"></p>
+        <p class="md-help">Files import instantly under their file name;
+        rename or drag them into folders in the library. Price files become
+        chartable symbols; anything else with a time column becomes an
+        <b>alternative dataset</b> your Brue strategies can <code>use</code>.</p>
+        <button id="md-econcal" title="Global macro releases with full history charts">
+          <span class="md-ec-title">Economic Calendar</span>
+          <span class="md-ec-sub">Every macro release worldwide, charted: CPI, NFP,
+          rate decisions and 18,000+ more events with actual vs consensus history.</span>
+        </button>
+      </div>
+    </section>
+  <!-- AI rail: the permanent right-hand panel, the mirror of the left
+       sidebar, present on every tab (no close button
+       for the same reason the watchlist has none). The provider dropdown
+       leads with the hosted LSE Assistant (works with just the LSE API key)
+       and then the user's OWN agent CLIs (Claude, ChatGPT/Codex, Gemini,
+       Kimi, Qwen, Copilot, OpenCode), signed in to their own account.
+       Agent CLIs get two views: Chat (/api/ai/chat structured turns) and
+       Terminal (the agent's TUI over /api/ai/pty, needed once for
+       interactive sign-in); the LSE Assistant is chat-only over the
+       /api/assistant SSE proxy. A drag handle on the left edge resizes. -->
+  <!-- Level 3 rail: order-by-order flow, between the charts and the trade
+       ticket. Opened by the toolbar Level 3 button;
+       lives outside #ai-rail so the assistant keeps its own width. -->
+  <aside id="l3-rail" class="hidden">
+    <div id="l3-head">
+      <span id="l3-title">Level 3</span>
+      <span id="l3-contract"></span>
+      <button id="l3-close" title="Close">&times;</button>
+    </div>
+    <!-- Stacking heatmap replaced the Events/adds/pulls summary strip:
+         per price level, how much resting size has
+         accumulated (adds minus pulls) over a rolling window; bar length and
+         depth of color = size, green/red = bid/ask side dominance. -->
+    <!-- Stacking ladder is the hero: price levels are
+         BUCKETED to a clean step so the ladder reads as zones, split around
+         the live quote; the old per-tick aggregation table folded into it. -->
+    <div class="l3-label">Order stacking <span id="l3-heat-win"></span></div>
+    <div id="l3-heat"></div>
+    <div class="l3-label">Order flow <span id="l3-win"></span></div>
+    <div id="l3-tape"></div>
+  </aside>
+  <aside id="ai-rail">
+    <div id="air-resize" title="Drag to resize"></div>
+    <!-- Trade panel: MARKETS mode only, the FIRST thing in the rail; the
+         assistant's own header row sits under it.
+         Live bid/ask on the buttons, spread chip between, qty in units,
+         optional SL/TP, open positions with one-click close. Executed by the
+         hosted sim engine through the backend proxy (key never in browser). -->
+    <div id="trade-panel" class="hidden">
+      <!-- Broker select: HIDDEN. There is ONE account door, the
+           connection control top-left, and the ticket follows whatever is
+           connected there. The element stays in the DOM because it is the
+           ticket's record of which broker it trades (tpbSetup fills it,
+           pickBroker sets it, tpbRefreshAccount reads its label); removing it
+           would mean rewriting five call sites for no user-visible gain.
+           The second select is the broker's OWN symbol list, carrying the
+           venue's whole catalog. It stays on for every connected broker
+           so users can switch without hunting;
+           the sidebar list the instrument row opens is the way to BROWSE a
+           venue, this is the way to switch without leaving what you charted. -->
+      <div id="tpx-brokerrow">
+        <select id="tpx-broker" class="hidden" title="Trading account / broker"></select>
+        <select id="tpx-bsym" class="hidden" title="Broker symbol"></select>
+      </div>
+      <!-- The instrument's logo rides the ticket too (it used to show
+           only in the sidebar). Same tile as a watchlist row (.wlogo:
+           art when the logo map has it, monogram otherwise); tpxSetLogo fills it. -->
+      <div id="tpx-symrow"><span id="tpx-logo" class="wlogo"><span class="winit"></span></span><span id="tpx-sym">–</span><span id="tpx-name"></span></div>
+      <!-- The account line is now the only account statement in the ticket,
+           and clicking it opens the connection screen that owns the choice. -->
+      <div id="tpx-acct" title="Connected account. Click to change it in the connection panel."><span id="tpx-acct-name">demo</span><span id="tpx-equity"></span></div>
+      <div id="tpx-btns">
+        <button id="tpx-sell" title="Sell at the bid"><span class="tpx-side">SELL</span><span id="tpx-bid">–</span></button>
+        <div id="tpx-spread" title="Spread">–</div>
+        <button id="tpx-buy" title="Buy at the ask"><span class="tpx-side">BUY</span><span id="tpx-ask">–</span></button>
+      </div>
+      <!-- The size field is named in the venue's OWN unit, never a generic
+           "quantity" (no trader uses that term).
+           LOTS on a contract of many units, SHARES on an equity, UNITS
+           otherwise; tpxRenderMargin sets it from the instrument's terms. -->
+      <div id="tpx-qtyrow">
+        <label for="tpx-qty" id="tpx-qtylab">LOTS</label>
+        <input id="tpx-qty" type="number" value="1" min="0" step="any">
+        <input id="tpx-sl" type="number" placeholder="SL" step="any" title="Stop loss">
+        <input id="tpx-tp" type="number" placeholder="TP" step="any" title="Take profit">
+      </div>
+      <!-- What this order size costs in margin, and what it leaves.
+           Computed from the VENUE's own instrument terms
+           (contract size, margin rate) and its account figures, never from a
+           house assumption: a broker that states no margin rate leaves this
+           block hidden rather than showing an invented number. -->
+      <div id="tpx-margin" class="hidden">
+        <div class="tpx-mcell"><span class="tpx-mlab" id="tpx-unitlab">1 LOT</span><span id="tpx-unit">–</span></div>
+        <div class="tpx-mcell"><span class="tpx-mlab">ORDER VALUE</span><span id="tpx-notional">–</span></div>
+        <div class="tpx-mcell"><span class="tpx-mlab">TICK VALUE</span><span id="tpx-tickval">–</span></div>
+        <div class="tpx-mcell"><span class="tpx-mlab">MARGIN</span><span id="tpx-mreq">–</span></div>
+        <div class="tpx-mcell"><span class="tpx-mlab">FREE AFTER</span><span id="tpx-mfree">–</span></div>
+        <div class="tpx-mcell"><span class="tpx-mlab">USED</span><span id="tpx-mused">–</span></div>
+      </div>
+      <div id="tpx-msg"></div>
+    </div>
+    <!-- The ticket/assistant resize sash is GONE:
+         it existed so a long ticket positions list could be
+         traded against the chat, but those rows moved to the dock,
+         and a remembered drag height kept pinning the ticket
+         taller than its content, leaving a dead band under the margin
+         block. The ticket is content-sized and not user-resizable. -->
+    <!-- Rail widgets: the strip between the ticket and
+         the assistant hosts user-picked cards (news wire, economic calendar,
+         options board, quotes). Every card reads a route the engine already
+         serves, and the + picker offers a card only after its route answers
+         something other than 404/405, so a frozen older engine never shows
+         a widget it cannot fill. rwSetup/rwRenderStack in app.js own this;
+         choices persist as the railWidgets key of the shell workspace
+         section (the engine's section list is frozen into shipped builds,
+         so no new section name would save there). Shows on MARKETS only,
+         same gate as the ticket. -->
+    <div id="rw-stack" class="hidden"></div>
+    <!-- STRATEGY BRIEF: BACKTEST > ALGO DEVELOPMENT looked
+         like WORKSPACE > IDE, so on that page the assistant moves down and
+         this panel sits above it: pre-configured choices for the backtest
+         the user wants (dataset, approach, direction, horizon, risk, costs,
+         validation, a free line), and BUILD sends one precise request
+         through the assistant's own composer path. Choices persist. Shown
+         only while the Algo Development page is on screen (app.js
+         btBriefSync watches #pyide); the trade panel does the same for
+         MARKETS. Rendered by btBriefRender(). -->
+    <div id="bt-brief" class="hidden"></div>
+    <div id="air-head">
+      <!-- Collapse folds the rail to a slim reopen strip; lives on the LEFT
+           edge, next to the edge it folds toward. -->
+      <button id="air-collapse" title="Collapse the assistant">&#187;</button>
+      <!-- Chat management, VS Code style: the clock lists previous chats
+           (archived in this browser's local storage at every turn), the
+           plus starts a fresh conversation. Wired by setupAiPanel. -->
+      <div id="air-hist">
+        <button id="air-hist-btn" title="Previous chats">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="6.1"/><path d="M8 4.6V8l2.4 1.6"/>
+          </svg>
+        </button>
+        <div id="air-hist-menu" class="hidden"></div>
+      </div>
+      <button id="air-new" title="New chat">+</button>
+      <!-- Autonomy level for local agent providers (hidden for the hosted
+           LSE Assistant, which has no tools): Ask / Auto-edit / Full auto,
+           VS Code agent-mode style. Wired by setupAiPanel; risky actions
+           in Ask/Auto-edit become Allow/Deny cards in the chat. -->
+      <div id="air-auto" class="hidden">
+        <button id="air-auto-btn" title="How much the agent may do without asking"></button>
+        <div id="air-auto-menu" class="hidden"></div>
+      </div>
+      <!-- Chat|Terminal toggle: hidden (the panel is
+           chat-only). The div stays in the DOM because setMode() and
+           updateModeUi() address both buttons, and login flows still open
+           the term view programmatically. -->
+      <div id="air-mode" class="hidden" title="Chat view, or the agent's own terminal UI">
+        <button id="air-mode-chat" class="active">Chat</button>
+        <button id="air-mode-term">Terminal</button>
+      </div>
+      <!-- Model switcher: the session's model, top right, one click to hop
+           Fable/Opus/Sonnet/Haiku without digging into the "/" menu.
+           Hidden for the hosted LSE Assistant, which has
+           no model choice. Wired by setupAiPanel. -->
+      <div id="air-model">
+        <button id="air-model-btn" title="Which model answers this chat"></button>
+        <div id="air-model-menu" class="hidden"></div>
+      </div>
+      <!-- Provider picker: top right of the header (it sat in the
+           composer bottom-right before, twice moved). Custom
+           control, not a native <select>: each row carries the provider's
+           real logo + install/sign-in status. Populated and wired by
+           setupAiPanel; the menu drops DOWN from here. -->
+      <!-- The "i" next to the provider picker: for
+           the hosted LSE Assistant it states that it is free, the daily
+           allowance and what a message sends; hidden for local agents,
+           whose account and cost live with their own vendor. -->
+      <div id="air-info">
+        <button id="air-info-btn" title="About Veron">i</button>
+        <div id="air-info-pop" class="hidden"></div>
+      </div>
+      <div id="air-picker">
+        <button id="air-picker-btn" title="Which AI answers here"></button>
+        <div id="air-picker-menu" class="hidden"></div>
+      </div>
+      <!-- Settings (the old collapse spot): the .md instruction files every
+           agent in the panel reads. USER.md is editable custom instructions;
+           the generated briefs are shown read-only. Wired by setupAiPanel. -->
+      <div id="air-set">
+        <button id="air-set-btn" title="Assistant settings and instruction files">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor"
+               stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="8" cy="8" r="2.4"/>
+            <path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/>
+          </svg>
+        </button>
+        <div id="air-set-menu" class="hidden"></div>
+      </div>
+    </div>
+    <!-- Tool browser: one slim strip under the header listing every native
+         function the local agents can call (/api/ai/tools mirrors the
+         bridge's CAPABILITY_TOOLS). Click a name for its description and
+         parameters. Hidden for the hosted LSE Assistant, which has no
+         tools. Wired by setupAiPanel. -->
+    <div id="air-tools" class="hidden">
+      <div id="air-tools-strip"></div>
+      <div id="air-tools-menu" class="hidden"></div>
+    </div>
+    <!-- Instruction-file editor: overlays the chat area while a .md from the
+         settings menu is open. Textarea is read-only for generated files. -->
+    <div id="air-md" class="hidden">
+      <div id="air-md-head">
+        <span id="air-md-name"></span>
+        <span id="air-md-note"></span>
+        <button id="air-md-close" title="Back to the chat">&#215;</button>
+      </div>
+      <textarea id="air-md-text" spellcheck="false"></textarea>
+      <div id="air-md-foot">
+        <button id="air-md-save">Save</button>
+        <span id="air-md-status"></span>
+      </div>
+    </div>
+    <!-- Reopen strip: covers the folded rail edge-to-edge so the whole slim
+         column is one click target, like a docked panel tab. -->
+    <button id="air-expand" title="Open the assistant">
+      <span class="air-exp-chev">&#171;</span>
+      <span class="air-exp-label">Assistant</span>
+    </button>
+    <div id="air-chat">
+      <div id="air-msgs"></div>
+      <div id="air-slash" class="hidden"></div>
+      <div id="air-composer">
+        <button id="air-plus" title="Commands and context (or type /)">+</button>
+        <textarea id="air-input" rows="1" spellcheck="false"
+          placeholder="Ask anything, or type / for commands&hellip;"></textarea>
+        <button id="air-send" title="Send (Enter)">&#9654;</button>
+        <button id="air-stop" class="hidden" title="Stop this turn">&#9632;</button>
+      </div>
+      <input type="file" id="air-file" class="hidden">
+    </div>
+    <div id="air-term" class="hidden"></div>
+    <div id="air-hint">Providers other than Veron run locally
+    on your own account.</div>
+  </aside>
+</main>
+<!-- The old #ai-panel Assistant slide-over is gone: the hosted assistant is
+     now the "LSE Assistant" provider inside the permanent right rail. -->
+<script src="./app.js"></script>
+</body>
+</html>

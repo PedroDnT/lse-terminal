@@ -1,0 +1,9 @@
+# title: TSI with Signal
+# panel: below
+t = tsi(close, 25, 13)
+# coalesce: ema() NaN-poisons on the tsi warmup bars and never recovers,
+# so seed the warmup at 0 (the tsi midline); the effect decays to nothing.
+s = ema(coalesce(t, 0), 13)
+plot(t, title="tsi")
+plot(s, title="signal")
+hline(0)

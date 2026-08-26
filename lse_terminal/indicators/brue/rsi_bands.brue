@@ -1,0 +1,6 @@
+# title: RSI with Bands
+# panel: below
+r = rsi(close, 14)
+plot(r, title="rsi")
+hline(70)
+hline(30)

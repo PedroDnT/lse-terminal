@@ -1,0 +1,78 @@
+{
+  "name": "lse-terminal-desktop",
+  "productName": "LSE Terminal",
+  "version": "0.0.1",
+  "description": "LSE Terminal desktop app: local backtesting on the Brue engine",
+  "main": "main.js",
+  "author": "London Strategic Edge",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.londonstrategicedge.terminal",
+    "productName": "LSE Terminal",
+    "artifactName": "LSE Terminal Beta Setup ${version}.${ext}",
+    "files": [
+      "main.js",
+      "preload.js"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://terminal.londonstrategicedge.com/releases/"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "sidecar",
+        "to": "sidecar"
+      }
+    ],
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Finance",
+      "icon": "build/icon.png"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true,
+      "artifactName": "LSE Terminal Beta ${version} ${arch}.${ext}"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico",
+      "signtoolOptions": {
+        "sign": "./sign-windows.js",
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

@@ -1,0 +1,6 @@
+# title: Adaptive MA Pack
+# panel: price
+plot(kama(close, 10, 2, 30), title="kama10")
+plot(alma(close, 21, 0.85, 6), title="alma21")
+plot(t3(close, 21, 0.7), title="t3_21")
+plot(mcginley(close, 14), title="mcginley14")

@@ -1,0 +1,458 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens the ported components consume ──────────────────────────
+   tailwind.config.ts maps bg-popover/border-border/text-muted-foreground/...
+   to raw var() references. The SITE defines those variables in its own
+   global stylesheet; the terminal port never did, so every class using them
+   resolved to an invalid value: popovers rendered TRANSPARENT (the see-
+   through Chart-layout panel), muted text inherited randomly. Mapped here
+   onto the shell's style.css chrome vars so they follow light/dark; literal
+   fallbacks keep the bundle usable if the shell sheet ever fails to load.
+   The neon tokens are aliased to the terminal's data palette on purpose:
+   chrome stays neutral, nothing glows. */
+:root {
+  --popover: var(--panel, #151619);
+  --popover-foreground: var(--text, #e6e8ea);
+  --card: var(--panel, #151619);
+  --border: var(--edge, #26282c);
+  --input: var(--edge, #26282c);
+  --ring: var(--line-strong, #3a3d42);
+  --muted: var(--hover, #1a1c20);
+  --muted-foreground: var(--dim, #8b8e94);
+  --accent: var(--active, #1b1d20);
+  --accent-foreground: var(--text, #e6e8ea);
+  --primary: var(--text, #e6e8ea);
+  --secondary: var(--hover, #1a1c20);
+  --success: var(--up, #21b3a4);
+  --warning: #c58435;
+  --destructive: var(--down, #f0426c);
+  --destructive-foreground: #ffffff;
+  --text-primary: var(--text, #e6e8ea);
+  --text-secondary: var(--dim, #8b8e94);
+  --text-dim: var(--dim, #8b8e94);
+  --glass-bg: var(--panel, #151619);
+  --glass-border: var(--edge, #26282c);
+  --neon-green: var(--up, #21b3a4);
+  --neon-pink: var(--down, #f0426c);
+  /* Accent chrome is neutral on purpose: the ported neon blue/purple/gold
+     looked like a toy. Only up/down keep color, and only for DATA (candles,
+     P&L sign); the green BUY / red SELL order buttons and the green/red
+     last-price tag were also made neutral (BacktestTradingPanel,
+     PRICE_TAG_NEUTRAL), so no chrome carries these tokens any more. */
+  --electric-blue: var(--dim, #8b8e94);
+  --neon-purple: var(--dim, #8b8e94);
+  --neon-gold: var(--dim, #8b8e94);
+}
+
+/* Cache-bust: forces a new asset hash after an outage where immutable
+   cache headers poisoned CSS URLs in browser caches. This rule is
+   invisible but changes the file content hash so Vite generates a new
+   filename that bypasses poisoned cache entries. Safe to remove once
+   the old max-age has long expired. */
+:root { --cache-bust-20260409: 1; }
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* iOS Safari Normalization                                          */
+/* @supports (-webkit-touch-callout: none) fires ONLY on real Safari */
+/* Chrome, Firefox, Samsung Internet etc. will NEVER match this      */
+/* ═══════════════════════════════════════════════════════════════════ */
+@supports (-webkit-touch-callout: none) {
+
+  /* Prevent auto-zoom on input focus (requires font-size >= 16px) */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Reset Safari's native select appearance to match Chrome */
+  select {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E") !important;
+    background-repeat: no-repeat !important;
+    background-position: right 8px center !important;
+    background-size: 12px !important;
+    padding-right: 28px !important;
+  }
+
+  /* Reset Safari's native input appearance */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]) {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+  }
+
+  /* Safari hides number spinners differently; normalize */
+  input[type="number"]::-webkit-inner-spin-button,
+  input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+  }
+
+  /* Consistent line-height for form controls (Safari adds extra) */
+  input,
+  select {
+    line-height: 1.4 !important;
+  }
+
+  /* Remove Safari's default inner shadow on inputs */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  textarea {
+    -webkit-appearance: none !important;
+  }
+}
+
+@layer base {
+
+  /* Monospace for numbers and data */
+  .font-mono-data {
+    font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Emoji font for flags and symbols */
+  .font-emoji {
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'Twemoji Mozilla', sans-serif;
+  }
+}
+
+@layer base {
+
+  /* Monospace for numbers and data */
+  .font-mono-data {
+    font-family: 'SF Mono', 'Fira Code', ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+
+  /* Live Badge with Pulse */
+  .live-badge {
+    @apply inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-glass-bg border border-neon-green text-neon-green text-xs font-semibold uppercase tracking-wider;
+  }
+
+  .live-badge::before {
+    content: '';
+    @apply w-2 h-2 rounded-full bg-neon-green;
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Premium Card */
+  .premium-card {
+    @apply bg-card border border-border rounded-lg p-6 backdrop-blur-sm;
+    @apply hover:border-electric-blue hover:shadow-glow-blue transition-all duration-300;
+  }
+
+  /* Data Grid Item */
+  .data-grid-item {
+    @apply bg-glass-bg border border-glass-border rounded-lg p-4 backdrop-blur-lg;
+    @apply hover:border-neon-purple hover:scale-102 transition-all duration-300;
+  }
+
+  /* Section Highlight Animation */
+  @keyframes section-highlight {
+    0% {
+      box-shadow: 0 0 0 0 rgba(46, 125, 50, 0);
+      border-color: transparent;
+    }
+
+    15% {
+      box-shadow: 0 0 20px 2px rgba(46, 125, 50, 0.4);
+      border-color: #2E7D32;
+    }
+
+    40% {
+      box-shadow: 0 0 20px 2px rgba(46, 125, 50, 0.4);
+      border-color: #2E7D32;
+    }
+
+    100% {
+      box-shadow: 0 0 0 0 rgba(46, 125, 50, 0);
+      border-color: transparent;
+    }
+  }
+
+  .highlight-section {
+    animation: section-highlight 2s ease-in-out forwards;
+    @apply rounded-xl border border-transparent transition-all duration-300;
+  }
+}
+
+@layer utilities {
+
+  /* Seamless infinite ticker using duplicated segments to avoid jumps */
+  .ticker {
+    overflow: hidden;
+    height: 100%;
+  }
+
+  .ticker__track {
+    display: inline-flex;
+    white-space: nowrap;
+    width: max-content;
+    animation: ticker var(--ticker-duration, 60s) linear infinite;
+    will-change: transform;
+  }
+
+  .ticker__segment {
+    display: inline-flex;
+  }
+
+  @keyframes ticker {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  /* Premium button shimmer animation for LSE Terminal */
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 0;
+    }
+
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  .ticker:hover .ticker__track {
+    animation-play-state: paused;
+  }
+
+  /* Smooth Scale */
+  .hover-scale-102 {
+    @apply transition-transform duration-300;
+  }
+
+  .hover-scale-102:hover {
+    transform: scale(1.02);
+  }
+
+  /* Custom Scrollbar */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: hsl(var(--primary) / 0.3);
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--primary) / 0.5);
+  }
+
+  /* Hide scrollbar utility */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Smooth momentum scrolling for touch devices */
+  .smooth-scroll-touch {
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+
+  /* iOS Safari: Prevent body scroll when drawing on charts */
+  .chart-drawing-active {
+    touch-action: none;
+    -webkit-overflow-scrolling: auto;
+    overflow: hidden;
+  }
+
+  .chart-drawing-active body {
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  /* Prevent iOS overscroll/bounce on chart page - aggressive fix */
+  .chart-page-container {
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-overflow-scrolling: auto;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    /* Phone hides TopNav on chart routes (App.tsx), so chart owns the full viewport. */
+    /* iPad still has TopNav and the @media (min-width: 768px) rule below pushes the */
+    /* container down by 4rem to clear it. Desktop is handled by .desktop-chart-mode. */
+    top: 0;
+    width: 100%;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* The previous @media (min-width: 768px) { top: 4rem } rule reserved 4rem */
+  /* of vertical space at the top of every chart route on iPad to clear the */
+  /* site TopNav. App.tsx now hides TopNav on every chart route, so the */
+  /* reservation became dead whitespace above the iPad chart toolbar. */
+
+
+  /* Desktop chart mode: chart fills entire viewport. The .desktop-chart-mode */
+  /* class is set on the body wrapper for chart routes regardless of width, */
+  /* so this rule applies on iPad and desktop alike. Phone keeps the base */
+  /* rule above which already gives top: 0. */
+  .desktop-chart-mode .chart-page-container {
+    top: 0;
+    height: 100vh;
+    height: 100dvh;
+  }
+
+  /* Mobile landscape: optimize for iOS Safari */
+  @media (orientation: landscape) and (max-height: 500px) {
+    .chart-page-container {
+      position: static !important;
+      top: auto !important;
+      inset: auto !important;
+      height: calc(100svh - 8px) !important;
+      min-height: calc(100svh - 8px) !important;
+      max-height: calc(100svh - 8px) !important;
+      touch-action: manipulation !important;
+      overflow: visible !important;
+      -webkit-overflow-scrolling: touch !important;
+      padding-bottom: 8px !important;
+    }
+
+    /* Enable page scrolling in landscape */
+    html,
+    body {
+      overflow-y: auto !important;
+      touch-action: pan-y !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
+  }
+
+  /* Chart UI elements - completely disable scroll triggers */
+  .chart-no-scroll {
+    touch-action: none;
+    overscroll-behavior: contain;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+
+  /* Allow horizontal scroll only where needed (e.g., timeframe buttons) */
+  .chart-scroll-x {
+    touch-action: pan-x !important;
+    overscroll-behavior: contain;
+  }
+
+  /* ===== iOS Native App Safe Areas ===== */
+  /* Applied when running inside the Capacitor native wrapper */
+  .capacitor-ios {
+    /* Top safe area for notch/Dynamic Island */
+    padding-top: env(safe-area-inset-top);
+    /* Bottom safe area for home indicator */
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Ensure fixed elements respect safe areas in native app */
+  .capacitor-ios .fixed-top,
+  .capacitor-ios nav:first-of-type {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  .capacitor-ios .fixed-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Strategy Builder: sidebar full-width on mobile/tablet (overrides inline style) */
+  @media (max-width: 1023px) {
+    .sidebar-strategy-mobile {
+      width: 100% !important;
+    }
+  }
+
+  /* ===== Large Phone Breakpoint (iPhone 17 Pro Max, etc.) ===== */
+  /* Devices with viewport width 430px+ but still mobile (<768px) */
+  /* Prevents the "zoomed out" look on larger phone screens */
+  @media (min-width: 430px) and (max-width: 767px) {
+
+    /* Scale up base text for readability on larger phones */
+    html {
+      font-size: 17px;
+    }
+
+    /* Increase content padding */
+    main.w-full {
+      padding-left: 1rem !important;
+      padding-right: 1rem !important;
+    }
+
+    /* Dashboard cards: slightly larger gaps */
+    .grid {
+      gap: 0.875rem;
+    }
+
+    /* Card content: more padding */
+    .premium-card,
+    .data-grid-item {
+      padding: 1.25rem;
+    }
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* Drawing tool dropdown menus: override ghost button green colours  */
+/* The ghost Button variant uses --electric-blue (green) on hover;   */
+/* these rules force neutral colours inside drawing tool popovers    */
+/* so the menus match TradingView's clean, colourless aesthetic.     */
+/* ═══════════════════════════════════════════════════════════════════ */
+.drawing-tool-menu button:hover {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+}
+/* Active/selected tool gets a visible highlight that overrides ghost variant */
+.drawing-tool-menu button.active-tool {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+}
+/* Scale up icons and text inside drawing tool menus for TradingView sizing */
+.drawing-tool-menu button > svg:first-child {
+  width: 1.25rem !important;
+  height: 1.25rem !important;
+}
+.drawing-tool-menu button > span {
+  font-size: 0.9375rem !important; /* 15px, between text-sm (14) and text-base (16) */
+}
+
+/* Timezone dropdown slide-up animation */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════ */
+/* Theme-Aware Logo Visibility                                       */
+/* Bulletproof CSS for swapping light/dark asset logos.               */
+/* Uses .logo-light / .logo-dark classes instead of Tailwind dark:   */
+/* to avoid Tailwind JIT / specificity issues.                       */
+/* ═══════════════════════════════════════════════════════════════════ */
+.logo-dark { display: none; }
+.logo-light { display: block; }
+
+:root.dark .logo-light,
+:root[data-theme="dark"] .logo-light,
+.dark .logo-light { display: none; }
+
+:root.dark .logo-dark,
+:root[data-theme="dark"] .logo-dark,
+.dark .logo-dark { display: block; }

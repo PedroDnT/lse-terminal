@@ -1,0 +1,7 @@
+# title: SMA Ribbon
+# panel: price
+plot(sma(close, 10), title="sma10")
+plot(sma(close, 20), title="sma20")
+plot(sma(close, 50), title="sma50")
+plot(sma(close, 100), title="sma100")
+plot(sma(close, 200), title="sma200")

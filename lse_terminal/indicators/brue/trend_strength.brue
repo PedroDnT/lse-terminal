@@ -1,0 +1,7 @@
+# title: Trend Strength
+# panel: below
+ax, pdi, mdi = adx(14)
+plot(ax, title="adx")
+plot(pdi, title="+di")
+plot(mdi, title="-di")
+hline(25)

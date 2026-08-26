@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Hardened runtime is mandatory for notarization. Electron's V8 needs
+       JIT and unsigned executable memory; the frozen Python sidecar loads
+       extension modules and wheels that are not signed by us, so library
+       validation must be off for it, and PyInstaller's bootloader passes
+       DYLD variables to the child interpreter. Without these the signed
+       app starts and the engine dies silently. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <!-- Broker adapters and the assistant's tools spawn the user's own
+       python3 and agent CLIs; those inherit these entitlements. -->
+  <key>com.apple.security.inherit</key>
+  <false/>
+</dict>
+</plist>

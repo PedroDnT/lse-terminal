@@ -1,0 +1,6 @@
+# title: HMA/WMA Cross
+# panel: price
+fast = hma(close, 21)
+slow = wma(close, 50)
+plot(fast, title="hma21")
+plot(slow, title="wma50")

@@ -1,0 +1,7 @@
+# title: EMA Ribbon
+# panel: price
+plot(ema(close, 8), title="ema8")
+plot(ema(close, 13), title="ema13")
+plot(ema(close, 21), title="ema21")
+plot(ema(close, 34), title="ema34")
+plot(ema(close, 55), title="ema55")

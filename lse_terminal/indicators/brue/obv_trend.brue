@@ -1,0 +1,6 @@
+# title: OBV with Trend Line
+# panel: below
+o = obv()
+s = ema(o, 21)
+plot(o, title="obv")
+plot(s, title="signal")

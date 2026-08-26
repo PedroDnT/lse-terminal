@@ -1,0 +1,6 @@
+# title: Klinger Oscillator
+# panel: below
+kv, ks = klinger(34, 55, 13)
+plot(kv, title="kvo")
+plot(ks, title="signal")
+hline(0)

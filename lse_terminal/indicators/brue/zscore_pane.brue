@@ -1,0 +1,7 @@
+# title: Z-Score
+# panel: below
+z = zscore(close, 20)
+plot(z, title="zscore")
+hline(2)
+hline(0)
+hline(-2)

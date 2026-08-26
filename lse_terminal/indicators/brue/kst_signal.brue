@@ -1,0 +1,9 @@
+# title: KST with Signal
+# panel: below
+k = kst(close)
+# coalesce: sma() NaN-poisons on the kst warmup bars and never recovers,
+# so seed the warmup at 0 (the kst midline); the effect decays to nothing.
+s = sma(coalesce(k, 0), 9)
+plot(k, title="kst")
+plot(s, title="signal")
+hline(0)

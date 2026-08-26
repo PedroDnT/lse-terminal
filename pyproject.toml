@@ -1,0 +1,67 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "lse-terminal"
+version = "0.0.1"
+description = "A free market terminal that runs on your own computer: live charts, an options board, a screener, an economic calendar, a strategy IDE with one click backtests, machine learning on your own data, a research wire, and an AI assistant."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [
+    { name = "London Strategic Edge", email = "support@londonstrategicedge.com" },
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "lse-data>=0.14.0",
+    # The Brue language engine (trade entries, .brue chart indicators).
+    # Distribution name is brue-language (the bare "brue" name on PyPI belongs to
+    # someone else); the import stays `import brue`. The connector is the
+    # separate brue-connect package.
+    "brue-language>=0.0.1",
+    "fastapi>=0.110",
+    # Pure-python PDF text extraction for the assistant's
+    # read_research_paper tool (papers feed -> full text).
+    "pypdf>=4",
+    "uvicorn>=0.27",
+    "websockets>=11.0",
+    "pandas>=1.5",
+    "numpy>=1.24",
+    "python-multipart>=0.0.9",
+    "pyarrow>=15",
+    # Windows ConPTY for the AI panel's terminal view (POSIX uses stdlib pty)
+    "pywinpty>=2.0; sys_platform == 'win32'",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+# MACHINE LEARNING tab libraries. Split in two because torch is multi-GB and
+# CUDA-variant specific; the tab's one-click installer offers exactly what a
+# chosen model needs, these extras are the manual equivalent.
+ml = [
+    "scikit-learn>=1.3",
+    "xgboost>=2.0",
+    "lightgbm>=4.0",
+    "catboost>=1.2",
+    "statsmodels>=0.14",
+    "arch>=6.0",
+    "scipy>=1.10",
+    "joblib>=1.3",
+]
+ml-deep = ["torch>=2.1"]
+
+[project.scripts]
+lset = "lse_terminal.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["lse_terminal"]
+
+[project.urls]
+Homepage = "https://londonstrategicedge.com"
+Repository = "https://github.com/londonstrategicedge/lse-terminal"
