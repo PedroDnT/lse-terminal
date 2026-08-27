@@ -1,8 +1,9 @@
 # Brazil: B3 data and the trading question
 
-Three data sources ship with the terminal for the Brazilian market, and
-none of them needs an account to be useful. This page says what each one
-covers, what it does not, and where order routing stands.
+Two data sources ship with the terminal for the Brazilian market, and
+neither needs an account: both read what B3 and the central bank publish
+for free. This page says what each one covers, what it does not, and
+where order routing stands.
 
 ## The sources
 
@@ -10,12 +11,16 @@ covers, what it does not, and where order routing stands.
 | --- | --- | --- | --- |
 | `b3` | B3 (Brasil, Bolsa, Balcão) | none | Official end-of-day history for the cash segment, back to 1986; the current session minute by minute; delayed quotes |
 | `bcb` | Banco Central do Brasil (macro) | none | Selic, CDI, IPCA, IGP-M, PTAX, IBC-Br and friends, back to the 1990s |
-| `brapi` | B3 via brapi.dev | free token | Per-symbol daily and intraday history in one small request |
 
 They are complements, not alternatives. `b3` is the exchange's own
-numbers and is the one to reconcile against. `brapi` is the one that
-answers a chart quickly. `bcb` is the one a Brazilian backtest needs to
-have a risk-free rate at all.
+numbers, and is what a Brazilian price series should be reconciled
+against. `bcb` is what a Brazilian backtest needs to have a risk-free
+rate at all.
+
+Both read public files directly, so there is no vendor in the middle to
+sign up with, bill you, or change its terms. The cost of that choice is
+stated below rather than hidden: what B3 does not publish, these
+providers do not have.
 
 ### `b3` — the exchange's own files
 
@@ -45,6 +50,10 @@ weeks of bars pulls individual sessions, a year pulls the yearly archive.
   close per minute with no volume, so a 1m bar is that print in all four
   OHLC slots and the volume pane is empty. Wider bars (5m, 15m, 1h) are
   real OHLC built from the minutes inside them.
+* There is no intraday **archive**. B3 publishes none, so yesterday's
+  minutes cannot be fetched from anywhere here — an intraday series has
+  to be recorded as it prints, or imported into MY DATA from a file. Only
+  the daily series has history.
 * Quotes are B3's public feed, delayed roughly 15 minutes, with no book —
   so no bid and no ask.
 * The first deep history request is slow: a yearly COTAHIST archive is
@@ -75,23 +84,6 @@ sparser line. Series are cached to `~/.config/lse-terminal/bcb`, because
 every SGS request costs about twenty seconds regardless of how much data
 it returns.
 
-### `brapi` — with your own free token
-
-[brapi.dev](https://brapi.dev) is a Brazilian API that answers per symbol:
-years of daily bars, or weeks of intraday, in one small request. That is
-the gap `b3` leaves, so it is worth the token.
-
-Set it with `BRAPI_TOKEN` in the environment, or `brapi_token` in
-`~/.config/lse-terminal/config.json`. Without one the source still answers
-for brapi's public sandbox tickers (PETR4, VALE3, ITUB4, MGLU3), which is
-enough to see what it does before registering.
-
-Its catalog is richer than COTAHIST's — full company names rather than
-12-character abbreviations, and a listing type per row. Its intraday
-history is shallow at the fine end (minutes go back days, hours go back
-about two years), and the terminal caps each request at what upstream
-actually keeps rather than asking for a window that comes back short.
-
 ## Using them
 
 Everything works through the normal surfaces — pick the source in MARKETS,
@@ -102,7 +94,6 @@ assistant, the provider name is what selects the source:
 GET /api/instruments?provider=b3&query=PETR
 GET /api/candles?provider=b3&symbol=PETR4&timeframe=1d&limit=500
 GET /api/candles?provider=bcb&symbol=BCB:CDI&timeframe=1d&limit=2000
-GET /api/candles?provider=brapi&symbol=WEGE3&timeframe=15m&limit=500
 ```
 
 To use a Brazilian macro series as alternative data in a backtest, import
@@ -160,6 +151,6 @@ and MT5 is the way through that gate for a self-serve user.
 
 COTAHIST and the `cotacao.b3.com.br` feed are published by B3 for public
 download; the SGS API is published by the Banco Central as open data.
-brapi.dev is a third party under its own terms, reached with the user's
-own token. As everywhere else in this terminal, every request goes out
-from the user's machine and nothing about the user goes with it.
+There is no third-party vendor in either path. As everywhere else in this
+terminal, every request goes out from the user's machine and nothing
+about the user goes with it.

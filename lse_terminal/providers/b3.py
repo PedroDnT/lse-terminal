@@ -23,8 +23,9 @@ Two sources, split by what each one is actually good at:
 What that split means for a caller, stated plainly rather than discovered:
 daily bars exist only for instruments COTAHIST carries, intraday exists
 only for the session in progress, and B3's public quote is delayed by
-about 15 minutes. Anyone wanting deep intraday history brings a brapi
-token (see ``brapi.py``) or imports their own files.
+about 15 minutes. B3 publishes no intraday archive at all, so deep
+intraday history is not something any free source here can give: it has
+to be recorded as it happens, or imported from a file.
 
 Everything downloaded is cached under ``<config_dir>/b3`` and parsed once
 into parquet; nothing about the user travels the other way, because these
