@@ -1,9 +1,9 @@
-"""The Brazilian sources: B3's own files, the central bank's series, brapi.
+"""The Brazilian sources: B3's own files and the central bank's series.
 
 Every test here runs offline. Each provider takes its HTTP getter as a
 constructor argument for exactly this reason, so the suite exercises the
 parsing and the request planning -- which is where the bugs live -- without
-depending on B3 being up or on a brapi token existing on the machine.
+depending on B3 or the Banco Central being up.
 
 The COTAHIST fixture is a dozen real records from a real session (a share,
 a unit, an ETF, a FII, a Fiagro, a BDR, an odd lot and two options), kept
@@ -13,7 +13,6 @@ publishes rather than one hand-typed to match the parser.
 
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import tempfile
@@ -27,8 +26,6 @@ import pytest
 from lse_terminal.providers.b3 import (B3Provider, _epoch_seconds, front_month,
                                        parse_cotahist)
 from lse_terminal.providers.bcb import BcbProvider, _to_candles as bcb_candles
-from lse_terminal.providers.brapi import (BrapiProvider, _range_for,
-                                          _to_candles as brapi_candles)
 from lse_terminal.contracts import CANDLE_COLUMNS
 from lse_terminal.testing import check_provider
 
@@ -383,118 +380,3 @@ def test_bcb_empty_window_is_a_gap_not_a_crash():
 
 def test_bcb_passes_the_compliance_harness():
     assert check_provider(bcb_provider()) == []
-
-
-# ── brapi ───────────────────────────────────────────────────────────────
-
-BRAPI_LIST = json.dumps({
-    "indexes": [{"stock": "^BVSP", "name": "IBOVESPA"}],
-    "stocks": [
-        {"stock": "PETR4", "name": "PETROLEO BRASILEIRO", "type": "stock",
-         "subType": "stock", "sector": "Energy Minerals"},
-        {"stock": "BOVA11", "name": "ISHARES IBOVESPA", "type": "fund",
-         "subType": "etf"},
-        {"stock": "HGLG11", "name": "CSHG LOGISTICA", "type": "fund",
-         "subType": "fii"},
-        {"stock": "ROXO34", "name": "NU HOLDINGS", "type": "bdr",
-         "subType": "bdr"},
-        {"stock": "XPTO9", "name": "SOMETHING NEW", "type": "warrant",
-         "subType": "warrant"},
-    ],
-}).encode()
-
-BRAPI_QUOTE = json.dumps({"results": [{
-    "symbol": "PETR4", "regularMarketPrice": 41.45,
-    "regularMarketTime": "2026-08-26T20:46:39.000Z",
-    "historicalDataPrice": [
-        {"date": 1787540400, "open": 42.60, "high": 42.64, "low": 41.62,
-         "close": 42.11, "volume": 49502500},
-        {"date": 1787626800, "open": 41.18, "high": 41.91, "low": 41.01,
-         "close": 41.35, "volume": 85920800},
-        {"date": 1787713200, "open": None, "high": None, "low": None,
-         "close": None, "volume": None},
-    ]}]}).encode()
-
-
-def brapi_provider(token: str | None = "test-token") -> BrapiProvider:
-    return BrapiProvider(token=token, fetch=StubFetch({
-        "quote/list": BRAPI_LIST, "quote/": BRAPI_QUOTE}))
-
-
-def test_brapi_catalog_groups_by_listing_type():
-    rows = {i.symbol: i.category for i in brapi_provider().search("", limit=100)}
-    assert rows["PETR4"] == "B3 Ações"
-    assert rows["BOVA11"] == "B3 ETFs"
-    assert rows["HGLG11"] == "B3 Fundos Imobiliários"
-    assert rows["ROXO34"] == "B3 BDRs"
-    assert rows["^BVSP"] == "B3 Índices"
-    # A listing type brapi adds later must still appear, not vanish.
-    assert rows["XPTO9"] == "B3 Outros"
-
-
-def test_brapi_candles_drop_bars_that_never_traded():
-    df = brapi_provider().candles("PETR4", "1d", limit=10)
-    assert list(df.columns) == CANDLE_COLUMNS
-    # The null row is a hole in the session, not a bar at zero.
-    assert len(df) == 2
-    assert float(df["close"].iloc[-1]) == 41.35
-    assert float(df["volume"].iloc[-1]) == 85_920_800
-
-
-def test_brapi_range_is_the_shortest_that_covers_the_request():
-    # brapi takes a named range, not a date window, so a bar count has to be
-    # turned into one -- and intraday is measured in sessions, not days.
-    assert _range_for("1d", 5, None, None) == "1mo"
-    assert _range_for("1d", 500, None, None) == "2y"   # ~724 sessions of calendar
-    assert _range_for("1h", 100, None, None) == "1mo"
-    assert _range_for("1m", 100, None, None) == "5d"   # a weekend must not empty it
-    # Upstream keeps only days of minute history, so a request for more is
-    # capped at the longest range that fits rather than overshooting it.
-    assert _range_for("1m", 100_000, None, None) == "5d"
-    assert _range_for("1h", 10_000, None, None) == "2y"
-    assert _range_for("1d", 10, "2020-01-01", "2026-01-01") == "10y"
-
-
-def test_brapi_missing_token_points_at_the_source_that_needs_none():
-    p = BrapiProvider(token=None, fetch=StubFetch({"quote/": json.dumps(
-        {"error": True, "code": "MISSING_TOKEN",
-         "message": "Token de autenticação não fornecido"}).encode()}))
-    with pytest.raises(Exception, match="b3 source"):
-        p.candles("WEGE3", "1d", limit=10)
-
-
-def test_brapi_configured_tracks_the_token():
-    assert brapi_provider().configured() is True
-    assert BrapiProvider(token=None, fetch=StubFetch({})).configured() == bool(
-        __import__("os").environ.get("BRAPI_TOKEN"))
-
-
-def test_brapi_stream_polls_and_survives_a_failed_round():
-    rounds = {"n": 0}
-
-    def fetch(url, timeout=0):
-        rounds["n"] += 1
-        if rounds["n"] == 1:
-            raise ConnectionError("brapi blipped")
-        return BRAPI_QUOTE
-
-    async def take_one():
-        agen = BrapiProvider(token="t", fetch=fetch).stream(["PETR4"])
-        async for tick in agen:
-            await agen.aclose()
-            return tick
-
-    tick = asyncio.run(take_one())
-    # A blip must not end the stream; the next poll carries the price.
-    assert tick["symbol"] == "PETR4" and tick["price"] == 41.45
-
-
-def test_brapi_passes_the_compliance_harness():
-    assert check_provider(brapi_provider(), symbol="PETR4", timeframe="1d") == []
-
-
-def test_brapi_empty_history_is_a_frame_not_a_crash():
-    # An unlisted ticker comes back with results but no bars; the shape has
-    # to hold so the caller sees "no history", not a column mismatch.
-    assert list(brapi_candles([]).columns) == CANDLE_COLUMNS
-    assert list(brapi_candles([{"date": 1, "close": 2}]).columns) == CANDLE_COLUMNS

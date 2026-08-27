@@ -41,19 +41,3 @@ def set_lse_api_key(key: str) -> None:
     cfg["lse_api_key"] = key.strip()
     save(cfg)
 
-
-def get_brapi_token() -> str | None:
-    """The user's own brapi.dev token, for the Brazilian intraday source.
-
-    Same shape as the LSE key: env first so CI and power users never need
-    the file, then config.json. Absent is a normal state -- the brapi
-    provider still answers for that vendor's public sandbox tickers, and
-    the b3 provider needs no token at all.
-    """
-    return os.environ.get("BRAPI_TOKEN") or load().get("brapi_token") or None
-
-
-def set_brapi_token(token: str) -> None:
-    cfg = load()
-    cfg["brapi_token"] = token.strip()
-    save(cfg)
