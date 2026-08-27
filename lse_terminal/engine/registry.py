@@ -65,11 +65,19 @@ class Registry:
 
 def load_builtins(reg: Registry) -> None:
     from lse_terminal.backtest.runner import PythonRunner
-    from lse_terminal.providers import DemoProvider, LseProvider, UserDataProvider
+    from lse_terminal.providers import (B3Provider, BcbProvider, BrapiProvider,
+                                        DemoProvider, LseProvider,
+                                        UserDataProvider)
 
     reg.register(UserDataProvider())
     reg.register(DemoProvider())
     reg.register(LseProvider())
+    # The Brazilian sources. Registered unconditionally because none of
+    # them needs an account to be useful and constructing one costs
+    # nothing: they only reach the network when a caller asks them to.
+    reg.register(B3Provider())
+    reg.register(BcbProvider())
+    reg.register(BrapiProvider())
     # One engine, and it runs the user's plain Python. Brue was removed as a
     # strategy language (it is an execution language now); the previous
     # Strategy-subclass engine went with it. Both are archived under

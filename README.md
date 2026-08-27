@@ -39,6 +39,15 @@ through the same adapter layer: a connected broker's prices can be charted
 and traded, and a strategy can attach any series as alternative data with
 `use NAME`, from economic releases to your own imports.
 
+**Brazil.** Three sources for B3 and the Brazilian macro picture, none of
+which needs an account: `b3` reads the exchange's own public files
+(official end-of-day back to 1986, the current session minute by minute,
+delayed quotes for shares, futures and the indices), `bcb` reads the
+central bank's open series API (Selic, CDI, IPCA, IGP-M, PTAX, IBC-Br),
+and `brapi` adds deep per-symbol intraday history on a free brapi.dev
+token. What each one covers, what it does not, and where B3 order routing
+stands, is in [docs/brazil.md](docs/brazil.md).
+
 **Execution.** Orders go through
 [Brue Connect](https://github.com/londonstrategicedge/brue-connect). Each
 broker has an adapter and your broker login never leaves your computer. The
