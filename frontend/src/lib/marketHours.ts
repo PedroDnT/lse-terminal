@@ -23,6 +23,16 @@
 //   XKRX              -> Seoul (9am to 3:30pm KST)
 //   XTAI              -> Taipei (9am to 1:30pm CST)
 //   XTKS              -> Tokyo (9am to 3pm JST, lunch break 11:30am-12:30pm)
+//   BVMF              -> B3 Sao Paulo (10am to 5pm or 6pm BRT, see below)
+//
+// B3 AND US DAYLIGHT SAVING:
+//   Brazil abolished daylight saving in 2019, so Sao Paulo is UTC-3 all year.
+//   B3 shifts its own session twice a year instead, to stay aligned with the
+//   US cash session: while US DST is in force the cash market closes at 17:00
+//   BRT (regular trading to 16:55, closing call to 17:00), and outside it the
+//   whole session slides an hour later and closes at 18:00. That is why the
+//   'saopaulo' entry below reads the US DST state rather than naming a fixed
+//   close, and why it is the one exchange whose hours depend on the date.
 //
 // DST HANDLING:
 //   All ET-based checks use getETTime() which calculates the correct UTC offset
@@ -488,6 +498,10 @@ const MIC_TO_EXCHANGE_ID: Record<string, string> = {
   XKRX: 'seoul',
   XTAI: 'taiwan',
   XTKS: 'tokyo',
+  // B3's operating MIC is BVMF; XBSP appears in some vendor catalogs for the
+  // same venue, so both land on the same hours.
+  BVMF: 'saopaulo',
+  XBSP: 'saopaulo',
 };
 
 /**
@@ -511,6 +525,9 @@ export const getExchangeFromSymbol = (symbol: string): string | null => {
   if (upper.endsWith('_TO') || upper.endsWith('.TO')) return 'toronto';
   if (upper.endsWith('_AX') || upper.endsWith('.AX')) return 'sydney';
   if (upper.endsWith('_NS') || upper.endsWith('.NS')) return 'india';
+  // The Yahoo-style B3 suffix. Bare B3 tickers (PETR4, BOVA11) carry no
+  // suffix at all and are resolved by MIC instead, via the catalog.
+  if (upper.endsWith('_SA') || upper.endsWith('.SA')) return 'saopaulo';
   if (/\d+[_.]HK$/i.test(upper) || upper.endsWith('_HK') || upper.endsWith('.HK')) return 'hongkong';
   if (/\d+[_.]KS$/i.test(upper) || upper.endsWith('_KS') || upper.endsWith('.KS')) return 'seoul';
   if (/\d+[_.]TW$/i.test(upper) || upper.endsWith('_TW') || upper.endsWith('.TW')) return 'taiwan';
@@ -518,8 +535,15 @@ export const getExchangeFromSymbol = (symbol: string): string | null => {
   return null;
 };
 
-/** Get exchange info for session popover. All hours are in LOCAL exchange time. */
-export const getExchangeInfo = (exchangeId: string): ExchangeInfo => {
+/**
+ * Get exchange info for session popover. All hours are in LOCAL exchange time.
+ *
+ * `at` matters only for B3, whose close hour moves with US daylight saving
+ * (see the note at the top of this file). Every other exchange returns the
+ * same hours whatever instant is passed, so callers that do not care may
+ * leave it out.
+ */
+export const getExchangeInfo = (exchangeId: string, at: Date = new Date()): ExchangeInfo => {
   switch (exchangeId) {
     case 'london':
       return { exchange: 'London Stock Exchange', timezone: 'Europe/London', tzLabel: 'GMT/BST', openHour: 8, openMinute: 0, closeHour: 16, closeMinute: 30 };
@@ -543,6 +567,13 @@ export const getExchangeInfo = (exchangeId: string): ExchangeInfo => {
       return { exchange: 'TWSE', timezone: 'Asia/Taipei', tzLabel: 'CST', openHour: 9, openMinute: 0, closeHour: 13, closeMinute: 30 };
     case 'tokyo':
       return { exchange: 'Tokyo Stock Exchange', timezone: 'Asia/Tokyo', tzLabel: 'JST', openHour: 9, openMinute: 0, closeHour: 15, closeMinute: 0, lunchBreak: { startHour: 11, startMinute: 30, endHour: 12, endMinute: 30 } };
+    case 'saopaulo': {
+      // 10:00 to 16:55 with the closing call to 17:00 while US DST is on;
+      // an hour later either side of that period. The close here is the end
+      // of the closing call, which is when the day's price is final.
+      const closeHour = getETOffsetHours(at.getTime()) === -4 ? 17 : 18;
+      return { exchange: 'B3 (Brasil, Bolsa, Balcao)', timezone: 'America/Sao_Paulo', tzLabel: 'BRT', openHour: 10, openMinute: 0, closeHour, closeMinute: 0 };
+    }
     case 'india':
       return { exchange: 'NSE India', timezone: 'Asia/Kolkata', tzLabel: 'IST', openHour: 9, openMinute: 15, closeHour: 15, closeMinute: 30 };
     default:
@@ -558,7 +589,10 @@ export const getExchangeInfo = (exchangeId: string): ExchangeInfo => {
  */
 export const isIntlExchangeOpen = (exchangeId: string, timestamp?: string | number | Date): boolean => {
   const now = timestamp ? new Date(timestamp) : new Date();
-  const info = getExchangeInfo(exchangeId);
+  // Passing the instant through matters for B3, whose close hour moves with
+  // US daylight saving; a historical timestamp must be judged by the rule
+  // that was in force then, not by today's.
+  const info = getExchangeInfo(exchangeId, now);
   const t = getTimeInTimezone(info.timezone, now);
 
   // Weekend
