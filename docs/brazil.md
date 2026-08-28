@@ -1,9 +1,20 @@
 # Brazil: B3 data and the trading question
 
-Two data sources ship with the terminal for the Brazilian market, and
-neither needs an account: both read what B3 and the central bank publish
-for free. This page says what each one covers, what it does not, and
-where order routing stands.
+Two data sources cover the Brazilian market, and neither needs an
+account: both read what B3 and the central bank publish for free. This
+page says what each one covers, what it does not, and where order routing
+stands.
+
+They are not modules in this repository. They ship as
+[lse-terminal-brazil](https://github.com/PedroDnT/lse-terminal-brazil),
+a separate distribution this build depends on, which plugs in through the
+`lse_terminal.providers` entry-point group — the same door any
+third-party source uses. That is deliberate: `registry.py` and
+`providers/__init__.py` stay exactly as upstream ships them, the sources
+version on their own schedule when B3 changes something, and there is one
+copy of the parsing code rather than two that drift. Anyone running a
+stock terminal gets the same sources with `pip install`; nothing here
+needs forking.
 
 ## The sources
 
@@ -58,6 +69,17 @@ weeks of bars pulls individual sessions, a year pulls the yearly archive.
   so no bid and no ask.
 * The first deep history request is slow: a yearly COTAHIST archive is
   about 90 MB. It happens once per year of history, then it is on disk.
+* **Old prices are per share, and they look small.** COTAHIST quotes a
+  paper per `FATCOT` units rather than per one, and on the 2000 tape 74%
+  of records carry a factor of 1,000 — Brazilian stocks were quoted *por
+  lote de mil* then. The provider divides, so PETR4 in March 2000 reads
+  R$0.47, not R$474. That is B3's own arithmetic: its published financial
+  volume divides by its published quantity to exactly that number.
+* **Nothing is corporate-action adjusted.** Splits, groupings and bonuses
+  are not applied, so a split shows up as a jump in the series and an old
+  price does not line up with a modern split-adjusted chart. COTAHIST
+  publishes the tape as traded; making it comparable across a split is the
+  caller's job.
 
 Catalog and futures codes are derived, not hardcoded: front-month
 contracts follow B3's own roll rules (index futures on the Wednesday
@@ -86,9 +108,11 @@ it returns.
 
 ## Using them
 
-Everything works through the normal surfaces — pick the source in MARKETS,
-chart a symbol, run a backtest against it. From a strategy or the
-assistant, the provider name is what selects the source:
+Nothing to enable. The plugin is a dependency, so it installs with the
+terminal and both sources are in MARKETS on the next start. Everything
+then works through the normal surfaces — chart a symbol, run a backtest
+against it. From a strategy or the assistant, the provider name is what
+selects the source:
 
 ```
 GET /api/instruments?provider=b3&query=PETR
