@@ -44,8 +44,11 @@ which needs an account, because both read what the institutions publish
 for free: `b3` reads the exchange's own public files (official end-of-day
 back to 1986, the current session minute by minute, delayed quotes for
 shares, futures and the indices), and `bcb` reads the central bank's open
-series API (Selic, CDI, IPCA, IGP-M, PTAX, IBC-Br). What each one covers,
-what it does not, and where B3 order routing stands, is in
+series API (Selic, CDI, IPCA, IGP-M, PTAX, IBC-Br). They ship as
+[lse-terminal-brazil](https://github.com/PedroDnT/lse-terminal-brazil), a
+plugin this build depends on rather than code in this tree — it arrives
+with the install and appears in MARKETS on first start. What each one
+covers, what it does not, and where B3 order routing stands, is in
 [docs/brazil.md](docs/brazil.md).
 
 **Execution.** Orders go through

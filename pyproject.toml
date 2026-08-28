@@ -37,6 +37,17 @@ dependencies = [
     # Windows ConPTY for the AI panel's terminal view (POSIX uses stdlib pty)
     "pywinpty>=2.0; sys_platform == 'win32'",
     "openpyxl>=3.1",
+    # The Brazilian sources (B3's own COTAHIST files and archive, plus the
+    # Banco Central's SGS series). A separate distribution rather than
+    # modules in this tree, because that is the shape the Provider contract
+    # is built for: it plugs in through the lse_terminal.providers
+    # entry-point group, so registry.py and providers/__init__.py stay
+    # exactly as upstream ships them and there is one copy of the code to
+    # fix when B3 changes something.
+    #
+    # A git URL because it is not on PyPI yet; the name alone once it is,
+    # at which point the allow-direct-references switch below comes out too.
+    "lse-terminal-brazil @ git+https://github.com/PedroDnT/lse-terminal-brazil",
 ]
 
 [project.optional-dependencies]
@@ -58,6 +69,13 @@ ml-deep = ["torch>=2.1"]
 
 [project.scripts]
 lset = "lse_terminal.cli:main"
+
+[tool.hatch.metadata]
+# Required for the direct git reference in dependencies above. The
+# consequence is that this build cannot itself be uploaded to PyPI, which
+# does not accept direct references — fine for a build installed from
+# source, and it goes away when lse-terminal-brazil is published.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["lse_terminal"]
