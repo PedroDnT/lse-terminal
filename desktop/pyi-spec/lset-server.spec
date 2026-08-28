@@ -4,9 +4,11 @@
 # sidecar on macOS, Linux and Windows.
 import os
 import sys
+import importlib.metadata
 import importlib.util
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import copy_metadata
 
 IS_WIN = sys.platform == "win32"
 # SPECPATH (injected by PyInstaller) = <repo>/desktop/pyi-spec
@@ -54,6 +56,55 @@ datas = [(os.path.join(ROOT, "lse_terminal", "ui", "static"), "lse_terminal/ui/s
 binaries = []
 hiddenimports = ['multipart', 'python_multipart', 'uvicorn.logging']
 hiddenimports += collect_submodules('lse_terminal')
+
+# Provider/indicator/engine PLUGINS, which live in their own distributions
+# and are found at RUNTIME through entry points. Static analysis cannot see
+# them at all -- nothing in this tree imports them by name -- and the
+# failure is silent in the worst way: registry.load_plugins walks an empty
+# entry-point group, finds nothing, and records NO error, so the frozen app
+# just quietly lacks those sources.
+#
+# Two things are needed and BOTH are easy to miss. The modules have to be
+# in the PYZ (collect_submodules), and the distribution's .dist-info has to
+# ship too (copy_metadata) -- entry_points() reads that metadata, and
+# PyInstaller drops it by default. Verified: with the module importable but
+# its dist-info hidden, the registry loses the plugin's providers and
+# reports plugin_errors == [].
+#
+# Written against the entry-point groups rather than a list of package
+# names, so a third-party plugin someone installs into the build venv is
+# picked up on the same terms as ours -- which is the point of having the
+# groups at all.
+_PLUGIN_GROUPS = ("lse_terminal.providers", "lse_terminal.indicators",
+                  "lse_terminal.engines")
+_plugin_dists, _plugin_modules = set(), set()
+for _group in _PLUGIN_GROUPS:
+    try:
+        _eps = importlib.metadata.entry_points(group=_group)
+    except Exception:
+        continue
+    for _ep in _eps:
+        try:
+            _plugin_modules.add(_ep.module.split(".")[0])
+        except Exception:
+            pass
+        # Ours is the host, already collected above and with no metadata to
+        # ship; everything else is a real plugin distribution.
+        _dist = getattr(_ep, "dist", None)
+        if _dist is not None and _dist.name not in ("lse-terminal", "lse_terminal"):
+            _plugin_dists.add(_dist.name)
+for _name in sorted(_plugin_modules - {"lse_terminal"}):
+    try:
+        hiddenimports += collect_submodules(_name)
+    except Exception:
+        pass
+for _name in sorted(_plugin_dists):
+    try:
+        datas += copy_metadata(_name)
+    except Exception as _e:
+        print(f"lset-server.spec: could not copy metadata for {_name}: {_e}")
+print(f"lset-server.spec: {len(_plugin_dists)} plugin distribution(s) bundled: "
+      f"{', '.join(sorted(_plugin_dists)) or 'none'}")
 # The brue language package, whole. Static analysis reaches only what
 # lse_terminal imports at module level (api, runtime, parser, ...); the
 # bridge behind the bundled .brue chart indicators imports
